@@ -3,42 +3,12 @@
 import Image from "next/image";
 import { useEffect, useRef, type PointerEvent } from "react";
 import { SectionTag } from "@/components/ui/SectionTag";
-
-const awards = [
-  {
-    title: "Most Influential Arabs",
-    by: "Arabian Business · 150 Most Influential",
-    year: "2025",
-  },
-  { title: "Forbes 30 Under 30", by: "Forbes Middle East", year: "2023" },
-  {
-    title: "Investor of the Year",
-    by: "Entrepreneur Middle East · e-Business Awards",
-    year: "2023",
-  },
-  { title: "GCC Top 50 CEOs", by: "Arabian Business", year: "2023" },
-  {
-    title: "Young Achiever of the Year",
-    by: "Gulf Business Awards",
-    year: "2023",
-  },
-  {
-    title: "Top 100 Most Inspiring Leaders",
-    by: "Arabian Business",
-    year: "2023",
-  },
-  { title: "Most Influential Arabs", by: "Arabian Business", year: "2022" },
-  {
-    title: "Forbes Under 30 EL Gouna",
-    by: "Forbes Middle East Summit",
-    year: "2022",
-  },
-];
+import type { Award } from "@/lib/awards";
 
 const TROPHY_W = 151;
 const TROPHY_H = 170;
 
-export function Awards() {
+export function Awards({ awards }: { awards: Award[] }) {
   const listRef = useRef<HTMLDivElement>(null);
   const trophyRef = useRef<HTMLDivElement>(null);
   const pos = useRef({ x: 0, y: 0, tx: 0, ty: 0, active: false });
@@ -115,7 +85,7 @@ export function Awards() {
         <ol>
           {awards.map((award, i) => (
             <li
-              key={`${award.title}-${award.year}`}
+              key={award.id}
               className={`group flex items-center justify-between gap-6 py-[18px] ${
                 i > 0 ? "border-t border-[#4f4b4b]/40" : "pt-0"
               }`}
