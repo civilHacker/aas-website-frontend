@@ -114,7 +114,7 @@ export function Awards({ awards }: { awards: Award[] }) {
           style={{ width: TROPHY_W, height: TROPHY_H }}
         >
           <Image
-            src="/images/about/trophy.png"
+            src="/images/about/award-trophy.png"
             alt=""
             width={TROPHY_W}
             height={TROPHY_H}
