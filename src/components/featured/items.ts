@@ -2,12 +2,11 @@ export type FeaturedKind = "article" | "press" | "podcast" | "talk";
 
 export type FeaturedItem = {
   id: string;
-  kind: FeaturedKind;
+  kind: FeaturedKind | null;
   title: string;
-  /** Reading, listening or watching time, e.g. "8 min". */
-  duration: string;
-  image: string;
-  href: string;
+  description: string;
+  image: string | null;
+  href: string | null;
 };
 
 export const featuredFilters: { id: FeaturedKind | "all"; label: string }[] = [
@@ -25,32 +24,17 @@ export const kindLabels: Record<FeaturedKind, string> = {
   talk: "Talk",
 };
 
-export const featuredItems: FeaturedItem[] = [
-  {
-    id: "abdallah-of-arabia",
-    kind: "article",
-    title:
-      "Meet Abdallah Of Arabia: The Serial Entrepreneur Behind UAE's Barq & Rizek",
-    duration: "8 min",
-    image: "/images/featured/card-1.png",
-    href: "#",
-  },
-  {
-    id: "abdallah-of-arabia-2",
-    kind: "article",
-    title:
-      "Meet Abdallah Of Arabia: The Serial Entrepreneur Behind UAE's Barq & Rizek",
-    duration: "8 min",
-    image: "/images/featured/card-2.png",
-    href: "#",
-  },
-  {
-    id: "abdallah-of-arabia-3",
-    kind: "article",
-    title:
-      "Meet Abdallah Of Arabia: The Serial Entrepreneur Behind UAE's Barq & Rizek",
-    duration: "8 min",
-    image: "/images/featured/card-3.png",
-    href: "#",
-  },
-];
+const kindsByCategory: Record<string, FeaturedKind> = {
+  article: "article",
+  articles: "article",
+  press: "press",
+  podcast: "podcast",
+  podcasts: "podcast",
+  talk: "talk",
+  talks: "talk",
+};
+
+/** Maps the admin panel's category ("Articles", "Press", …) onto a filter. */
+export function kindFromCategory(category: string): FeaturedKind | null {
+  return kindsByCategory[category.trim().toLowerCase()] ?? null;
+}
