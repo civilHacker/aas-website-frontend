@@ -1,12 +1,13 @@
 "use client";
 
-import type { FormEvent } from "react";
+import { useActionState } from "react";
+import { subscribe, type SubscribeState } from "@/app/actions/subscribe";
 import { CroppedImage } from "@/components/ui/CroppedImage";
 
+const initialState: SubscribeState = { status: "idle" };
+
 export function Newsletter() {
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-  }
+  const [state, formAction, pending] = useActionState(subscribe, initialState);
 
   return (
     <section className="bg-black px-4 pt-[79px]">
@@ -39,7 +40,7 @@ export function Newsletter() {
             building companies, investing, and life in the Arab world.
           </p>
           <form
-            onSubmit={handleSubmit}
+            action={formAction}
             className="mt-2 flex h-[51px] w-full max-w-[351px] items-center justify-between gap-2 rounded-[14px] bg-white/18 pr-[5px] pl-[11px] xl:mt-0"
           >
             <label htmlFor="newsletter-email" className="sr-only">
@@ -52,15 +53,27 @@ export function Newsletter() {
               autoComplete="email"
               placeholder="your@email.com"
               required
+              maxLength={254}
+              defaultValue={state.email}
+              aria-describedby="newsletter-status"
               className="min-w-0 flex-1 bg-transparent text-[16px] leading-[1.3] text-field outline-none placeholder:text-field"
             />
             <button
               type="submit"
-              className="flex h-[37px] shrink-0 items-center justify-center rounded-[10px] bg-accent px-[18px] text-[14px] leading-[1.3] text-black transition-opacity hover:opacity-85"
+              disabled={pending}
+              className="flex h-[37px] shrink-0 items-center justify-center rounded-[10px] bg-accent px-[18px] text-[14px] leading-[1.3] text-black transition-opacity hover:opacity-85 disabled:cursor-wait disabled:opacity-60"
             >
-              Subscribe
+              {pending ? "Subscribing…" : "Subscribe"}
             </button>
           </form>
+          <p
+            id="newsletter-status"
+            role="status"
+            aria-live="polite"
+            className={`min-h-[20px] text-[14px] ${state.status === "error" ? "text-[#ff8a80]" : "text-accent"}`}
+          >
+            {state.message}
+          </p>
         </div>
 
         <CroppedImage
