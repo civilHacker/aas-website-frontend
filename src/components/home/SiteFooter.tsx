@@ -35,11 +35,11 @@ const columns = [
     heading: "More",
     links: [
       { label: "My Story", href: "/story" },
-      { label: "Blog", href: "/#blog" },
-      { label: "Book", href: "/#book" },
+      { label: "Blog", href: "/overview#blog" },
+      { label: "Book", href: "/overview#book" },
       { label: "Awards", href: "/about#awards" },
-      { label: "Mentorship", href: "/#teaching" },
-      { label: "Media & Contact", href: "/#contact" },
+      { label: "Mentorship", href: "/overview#teaching" },
+      { label: "Media & Contact", href: "/overview#contact" },
     ],
   },
 ];

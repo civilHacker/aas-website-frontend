@@ -110,7 +110,7 @@ export function ShelfOverview({
       className="library-overview absolute inset-0 z-40 flex flex-col overflow-x-hidden overflow-y-auto bg-[radial-gradient(120%_90%_at_50%_40%,#1c0b06_0%,#0d0402_60%,#050100_100%)] [--u:clamp(50px,8.5svh,110px)]"
     >
       <h2
-        className={`${SERIF} shrink-0 px-5 pt-6 pr-20 text-[34px] leading-[1.05] tracking-[-0.02em] text-white sm:px-10 sm:pt-8 sm:text-[44px] lg:px-[42px] lg:text-[52px]`}
+        className={`${SERIF} shrink-0 px-5 pt-28 pr-20 text-[34px] leading-[1.05] tracking-[-0.02em] text-white sm:px-10 sm:pt-32 sm:text-[44px] lg:px-[42px] lg:text-[52px]`}
       >
         The Founder’s Shelf
       </h2>

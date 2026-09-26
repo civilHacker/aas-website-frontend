@@ -4,8 +4,8 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 
 const navLinks = [
-  { key: "home", label: "Home", href: "/" },
-  { key: "library", label: "Library", href: "/library" },
+  { key: "library", label: "Library", href: "/" },
+  { key: "overview", label: "Overview", href: "/overview" },
   { key: "work", label: "Work", href: "/work" },
   { key: "featured", label: "Featured", href: "/featured" },
   { key: "about", label: "About", href: "/about" },
@@ -15,7 +15,7 @@ const navLinks = [
 type NavKey = (typeof navLinks)[number]["key"];
 
 export function SiteHeader({
-  active = "home",
+  active = "overview",
   onDark = false,
 }: {
   active?: NavKey;
@@ -80,7 +80,7 @@ export function SiteHeader({
 
       <div className="flex shrink-0 items-center gap-2">
         <Link
-          href="/#contact"
+          href="/overview#contact"
           className="hidden rounded-[20px] bg-white px-6 py-[17px] text-[15px] leading-[1.119] text-black transition-opacity hover:opacity-85 sm:block sm:px-[31px]"
         >
           Contact
@@ -125,7 +125,7 @@ export function SiteHeader({
             </Link>
           ))}
           <Link
-            href="/#contact"
+            href="/overview#contact"
             onClick={() => setMenuOpen(false)}
             className="mt-1 rounded-[12px] bg-accent px-4 py-3 text-center text-[16px] text-black sm:hidden"
           >

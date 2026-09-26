@@ -47,11 +47,11 @@ function FeaturedCard({ item }: { item: FeaturedItem }) {
         </p>
       )}
 
-      <h2 className="max-w-[318px] font-manrope text-[18px] leading-[1.35] text-white sm:text-[20px]">
+      <h2 className="w-full pr-3 font-manrope text-[18px] leading-[1.35] text-white sm:text-[20px]">
         {item.title}
       </h2>
 
-      <p className="line-clamp-3 max-w-[380px] text-[15px] leading-[1.4] text-white/60">
+      <p className="line-clamp-3 w-full pr-3 text-[15px] leading-[1.4] text-white/60">
         {item.description}
       </p>
 

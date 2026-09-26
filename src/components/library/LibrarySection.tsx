@@ -7,6 +7,7 @@ import {
   useEffect,
   useMemo,
   useRef,
+  useId,
   useState,
   type CSSProperties,
   type PointerEvent,
@@ -23,17 +24,47 @@ const BookshelfScene = dynamic(() => import("./BookshelfScene"), {
 });
 
 const TITLE = "The Founder’s Shelf";
-const INITIAL_SLOT = Math.floor((libraryBooks.length - 1) / 2);
+const SHELF_ANCHOR = "library-shelf";
+
+const inShelf = (shelf?: ShelfId) =>
+  libraryBooks.map((b) => !shelf || b.shelf === shelf);
+
+const middleSlot = (shelf?: ShelfId) =>
+  Math.max(0, Math.floor((inShelf(shelf).filter(Boolean).length - 1) / 2));
+
+function scrollToCollection(id: ShelfId | "all") {
+  document
+    .getElementById(id === "all" ? SHELF_ANCHOR : `collection-${id}`)
+    ?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
 
 const glass =
   "border border-white/10 bg-white/20 text-white backdrop-blur-[20px] transition-[opacity,background-color,color] hover:bg-white hover:text-black";
 
-export function LibrarySection({ header }: { header: ReactNode }) {
-  const [filter, setFilter] = useState<ShelfId | "all">("all");
-  const [centered, setCentered] = useState(INITIAL_SLOT);
+/**
+ * The interactive 3D shelf. Without `shelf` it is the page hero showing every book;
+ * with `shelf` it is that category's collection, locked to its books.
+ */
+export function LibrarySection({
+  header,
+  shelf,
+}: {
+  header?: ReactNode;
+  shelf?: ShelfId;
+}) {
+  const initialSlot = middleSlot(shelf);
+  const [filter, setFilter] = useState<ShelfId | "all">(shelf ?? "all");
+  const [centered, setCentered] = useState(
+    () => inShelf(shelf).flatMap((v, i) => (v ? [i] : []))[initialSlot] ?? 0,
+  );
   const [selected, setSelected] = useState<number | null>(null);
   const [panelVisible, setPanelVisible] = useState(false);
   const [overview, setOverview] = useState(false);
+  const [live, setLive] = useState(!shelf);
+  const titleId = useId();
+
+  const label = shelves.find((s) => s.id === shelf)?.label;
+  const title = label ? `${label} Collections` : TITLE;
 
   const sectionRef = useRef<HTMLElement>(null);
   const thumbRef = useRef<HTMLSpanElement>(null);
@@ -41,16 +72,27 @@ export function LibrarySection({ header }: { header: ReactNode }) {
   const snapTimer = useRef<number | undefined>(undefined);
   const drag = useRef<{ x: number; start: number } | null>(null);
   const controller = useRef<ShelfController>({
-    target: INITIAL_SLOT,
-    display: INITIAL_SLOT,
+    target: initialSlot,
+    display: initialSlot,
     selected: null,
     opening: false,
     openT: 0,
     hovered: null,
     dragMoved: false,
     reducedMotion: false,
-    visible: libraryBooks.map(() => true),
+    visible: inShelf(shelf),
   });
+
+  useEffect(() => {
+    const node = sectionRef.current;
+    if (live || !node) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => entry.isIntersecting && setLive(true),
+      { rootMargin: "200px 0px" },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [live]);
 
   const visibleBooks = useMemo(
     () =>
@@ -78,14 +120,6 @@ export function LibrarySection({ header }: { header: ReactNode }) {
       c.onDisplay = undefined;
     };
   }, [slotCount]);
-
-  useEffect(() => {
-    const onChange = () => {
-      if (!document.fullscreenElement) setOverview(false);
-    };
-    document.addEventListener("fullscreenchange", onChange);
-    return () => document.removeEventListener("fullscreenchange", onChange);
-  }, []);
 
   const clampSlot = useCallback(
     (v: number) => Math.min(slotCountRef.current - 1, Math.max(0, v)),
@@ -142,17 +176,12 @@ export function LibrarySection({ header }: { header: ReactNode }) {
     setFilter(id);
   };
 
-  const closeOverview = useCallback(() => {
-    setOverview(false);
-    if (document.fullscreenElement) void document.exitFullscreen();
-  }, []);
+  const closeOverview = useCallback(() => setOverview(false), []);
 
   const toggleOverview = () => {
     if (overview) return closeOverview();
     if (controller.current.selected !== null) return;
     setOverview(true);
-    // Fullscreen is a bonus; iOS Safari has no element fullscreen, so the overview still fills the section.
-    sectionRef.current?.requestFullscreen?.().catch(() => {});
   };
 
   const pickFromOverview = (index: number) => {
@@ -160,6 +189,11 @@ export function LibrarySection({ header }: { header: ReactNode }) {
     const shelf = libraryBooks[index].shelf;
     if (shelf && shelf !== filter) chooseShelf(shelf);
     open(index);
+  };
+
+  const onTab = (id: ShelfId | "all") => {
+    if (!shelf && id === "all") return chooseShelf("all");
+    if (id !== shelf) scrollToCollection(id);
   };
 
   useEffect(() => {
@@ -176,7 +210,8 @@ export function LibrarySection({ header }: { header: ReactNode }) {
       if (target?.closest("input, textarea, select, [contenteditable='true']"))
         return;
       const rect = sectionRef.current?.getBoundingClientRect();
-      if (!rect || rect.bottom < 0 || rect.top > window.innerHeight) return;
+      const middle = window.innerHeight / 2;
+      if (!rect || rect.top > middle || rect.bottom < middle) return;
       event.preventDefault();
       step(event.key === "ArrowLeft" ? -1 : 1);
     };
@@ -236,12 +271,14 @@ export function LibrarySection({ header }: { header: ReactNode }) {
   const facing = libraryBooks[centered] ?? visibleBooks[0]?.book;
   const facingSlot = visibleBooks.findIndex(({ index }) => index === centered);
   const isOpen = selected !== null;
+  const Heading = shelf ? "h2" : "h1";
 
   return (
     <>
       <section
         ref={sectionRef}
-        aria-label="The Founder’s Shelf, an interactive bookshelf"
+        id={shelf ? `collection-${shelf}` : SHELF_ANCHOR}
+        aria-label={`${title}, an interactive bookshelf`}
         className="library-room relative isolate h-svh min-h-[680px] w-full overflow-hidden bg-black"
       >
         <Image
@@ -249,10 +286,26 @@ export function LibrarySection({ header }: { header: ReactNode }) {
           alt=""
           fill
           sizes="100vw"
-          loading="eager"
-          fetchPriority="high"
+          loading={shelf ? "lazy" : "eager"}
+          fetchPriority={shelf ? "auto" : "high"}
           className="object-cover"
         />
+        {shelf && (
+          // Ends just above the table edge in the cover-cropped photo (73.5% of its height).
+          <div
+            aria-hidden
+            className="absolute inset-x-0 top-0 h-[calc(max(100svh,680px)/2+0.235*max(max(100svh,680px),100vw*941/1672))] bg-[#0f0604]"
+          >
+            <Image
+              src="/images/library/collections/wall.png"
+              alt=""
+              fill
+              sizes="100vw"
+              className="object-cover object-bottom"
+            />
+            <div className="absolute inset-0 bg-black/85" />
+          </div>
+        )}
         <div className="library-veil pointer-events-none absolute inset-0" />
         <div
           className={`pointer-events-none absolute inset-0 bg-(--lib-base) transition-opacity duration-700 ${isOpen ? "opacity-50" : "opacity-0"}`}
@@ -263,30 +316,34 @@ export function LibrarySection({ header }: { header: ReactNode }) {
           onPointerDown={onStagePointerDown}
           onWheel={onStageWheel}
         >
-          <BookshelfScene
-            books={libraryBooks}
-            controller={controller}
-            onSelect={open}
-            onCenteredChange={setCentered}
-            onPanelChange={setPanelVisible}
-            onClosed={handleClosed}
-          />
+          {live && (
+            <BookshelfScene
+              books={libraryBooks}
+              controller={controller}
+              onSelect={open}
+              onCenteredChange={setCentered}
+              onPanelChange={setPanelVisible}
+              onClosed={handleClosed}
+            />
+          )}
         </div>
 
         <div className="library-grain pointer-events-none absolute -inset-1/2" />
 
-        <div className="absolute inset-x-0 top-0 z-30">{header}</div>
+        {header && (
+          <div className="absolute inset-x-0 top-0 z-[45]">{header}</div>
+        )}
 
         <div
-          className={`pointer-events-none absolute inset-x-0 top-[max(120px,18%)] z-10 flex flex-col items-center gap-[14px] px-5 text-center transition-[opacity,transform] duration-700 ${
-            isOpen ? "-translate-y-3 opacity-0" : ""
-          }`}
+          className={`pointer-events-none absolute inset-x-0 z-10 flex flex-col items-center px-5 text-center transition-[opacity,transform] duration-700 ${
+            shelf ? "top-16 gap-8" : "top-[max(120px,18%)] gap-[14px]"
+          } ${isOpen ? "-translate-y-3 opacity-0" : ""}`}
         >
-          <h1
-            aria-label={TITLE}
+          <Heading
+            aria-label={title}
             className="library-flip font-[Georgia,'Times_New_Roman',serif] text-[40px] leading-[1.01] tracking-[-0.025em] text-white sm:text-[56px] lg:text-[69px]"
           >
-            {TITLE.split(" ").map((word, w, words) => {
+            {title.split(" ").map((word, w, words) => {
               const offset =
                 words.slice(0, w).join(" ").length + (w > 0 ? 1 : 0);
               return (
@@ -308,25 +365,25 @@ export function LibrarySection({ header }: { header: ReactNode }) {
                 </span>
               );
             })}
-          </h1>
+          </Heading>
           <div
             role="group"
-            aria-label="Filter shelf"
+            aria-label={shelf ? "Collections" : "Filter shelf"}
             className="library-fade pointer-events-auto flex h-[51px] items-center gap-1 rounded-[13px] bg-white/20 py-2 pr-2 pl-2 backdrop-blur-[20px] sm:gap-2"
           >
-            {shelves.map((shelf) => (
+            {shelves.map((tab) => (
               <button
-                key={shelf.id}
+                key={tab.id}
                 type="button"
-                aria-pressed={filter === shelf.id}
-                onClick={() => chooseShelf(shelf.id)}
+                aria-pressed={filter === tab.id}
+                onClick={() => onTab(tab.id)}
                 className={`flex h-[35px] min-w-[58px] items-center justify-center rounded-[11px] px-3 text-[15px] leading-[1.119] whitespace-nowrap transition-colors duration-300 ${
-                  filter === shelf.id
+                  filter === tab.id
                     ? "bg-white text-black"
                     : "text-white hover:bg-white/15"
                 }`}
               >
-                {shelf.label}
+                {tab.label}
               </button>
             ))}
           </div>
@@ -401,7 +458,7 @@ export function LibrarySection({ header }: { header: ReactNode }) {
                 ref={thumbRef}
                 className="absolute top-1/2 h-4 w-7 -translate-1/2 rounded-full bg-white shadow-[0_2px_10px_rgba(0,0,0,0.35)]"
                 style={{
-                  left: `${(INITIAL_SLOT / Math.max(1, lastSlot)) * 100}%`,
+                  left: `${(initialSlot / Math.max(1, lastSlot)) * 100}%`,
                 }}
               />
             </div>
@@ -445,25 +502,31 @@ export function LibrarySection({ header }: { header: ReactNode }) {
           </svg>
         </button>
 
-        <ShelfOverview open={overview} onPick={pickFromOverview} />
+        {!shelf && (
+          <>
+            <ShelfOverview open={overview} onPick={pickFromOverview} />
 
-        <button
-          type="button"
-          onClick={toggleOverview}
-          tabIndex={isOpen ? -1 : 0}
-          aria-label={overview ? "Back to the bookshelf" : "View all shelves"}
-          aria-pressed={overview}
-          className={`library-fade absolute right-4 z-50 flex h-[51px] items-center justify-center rounded-[13px] bg-white/20 px-2 backdrop-blur-[20px] transition-[background-color,opacity] duration-500 hover:bg-white/30 sm:top-auto sm:right-8 sm:bottom-[51px] ${
-            isOpen ? "pointer-events-none opacity-0" : ""
-          } ${overview ? "top-5" : "top-24"}`}
-        >
-          <Image
-            src="/images/library/arrows-out-cardinal.svg"
-            alt=""
-            width={32}
-            height={32}
-          />
-        </button>
+            <button
+              type="button"
+              onClick={toggleOverview}
+              tabIndex={isOpen ? -1 : 0}
+              aria-label={
+                overview ? "Back to the bookshelf" : "View all shelves"
+              }
+              aria-pressed={overview}
+              className={`library-fade absolute right-4 z-50 flex h-[51px] items-center justify-center rounded-[13px] bg-white/20 px-2 backdrop-blur-[20px] transition-[background-color,opacity] duration-500 hover:bg-white/30 sm:top-auto sm:right-8 sm:bottom-[51px] ${
+                isOpen ? "pointer-events-none opacity-0" : ""
+              } ${overview ? "top-28" : "top-24"}`}
+            >
+              <Image
+                src="/images/library/arrows-out-cardinal.svg"
+                alt=""
+                width={32}
+                height={32}
+              />
+            </button>
+          </>
+        )}
 
         <ul className="sr-only">
           {visibleBooks.map(({ book: b, index }) => (
@@ -478,7 +541,7 @@ export function LibrarySection({ header }: { header: ReactNode }) {
         <aside
           role="dialog"
           aria-modal="false"
-          aria-labelledby="library-book-title"
+          aria-labelledby={titleId}
           aria-hidden={!panelVisible}
           data-visible={panelVisible}
           className={`library-panel absolute inset-x-3 bottom-3 z-20 max-h-[46%] overflow-y-auto rounded-2xl border border-white/10 bg-(--lib-glass-strong) p-5 backdrop-blur-xl transition-opacity duration-300 sm:inset-x-6 sm:bottom-6 sm:p-6 md:inset-x-auto md:top-1/2 md:right-[4%] md:bottom-auto md:max-h-[80%] md:w-[min(520px,42%)] md:-translate-y-1/2 md:border-0 md:bg-transparent md:p-0 md:backdrop-blur-none xl:right-[6%] ${
@@ -494,7 +557,7 @@ export function LibrarySection({ header }: { header: ReactNode }) {
                 by {book.author}
               </p>
               <h2
-                id="library-book-title"
+                id={titleId}
                 className="library-cascade mt-3 font-[Georgia,'Times_New_Roman',serif] text-[34px] leading-[1.08] tracking-[-0.02em] text-white sm:text-[44px] xl:text-[56px]"
                 style={{ "--i": 1 } as CSSProperties}
               >

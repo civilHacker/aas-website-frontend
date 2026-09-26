@@ -43,7 +43,7 @@ export function BookNotes() {
               and recommendations I&apos;ve written on each.
             </p>
             <Link
-              href="/library"
+              href="/"
               className="flex h-[45px] w-[175px] items-center justify-center rounded-[15px] bg-accent px-[18px] font-manrope text-[14px] leading-[1.3] font-semibold text-black transition-opacity hover:opacity-85"
             >
               Explore Library →

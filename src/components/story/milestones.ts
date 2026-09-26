@@ -137,6 +137,6 @@ export const milestones: Milestone[] = [
         height: "255.38%",
       },
     },
-    cta: { label: "Get in touch", href: "/#contact" },
+    cta: { label: "Get in touch", href: "/overview#contact" },
   },
 ];

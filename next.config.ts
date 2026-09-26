@@ -8,6 +8,9 @@ const nextConfig: NextConfig = {
       ? [new URL(`${supabaseUrl}/storage/v1/object/public/**`)]
       : [],
   },
+  redirects() {
+    return [{ source: "/library", destination: "/", permanent: true }];
+  },
 };
 
 export default nextConfig;

@@ -1,21 +1,24 @@
-import { BookNotes } from "@/components/home/BookNotes";
-import { Contact } from "@/components/home/Contact";
-import { Hero } from "@/components/home/Hero";
-import { Newsletter } from "@/components/home/Newsletter";
+import type { Metadata } from "next";
 import { SiteFooter } from "@/components/home/SiteFooter";
-import { Stats } from "@/components/home/Stats";
-import { Ventures } from "@/components/home/Ventures";
+import { PageHeader } from "@/components/home/PageHeader";
+import { LibrarySection } from "@/components/library/LibrarySection";
 
-export default function Home() {
+export const metadata: Metadata = {
+  title: "The Founder’s Shelf — Abdallah Abu-Sheikh",
+  description:
+    "The books Abdallah Abu-Sheikh keeps returning to, on a shelf you can browse and open.",
+};
+
+export default function LibraryPage() {
   return (
     <>
       <main className="flex-1 bg-black">
-        <Hero />
-        <Stats />
-        <Ventures />
-        <BookNotes />
-        <Contact />
-        <Newsletter />
+        <LibrarySection
+          header={<PageHeader active="library" onDark={false} />}
+        />
+        <LibrarySection shelf="arabic" />
+        <LibrarySection shelf="sufism" />
+        <LibrarySection shelf="islamic" />
       </main>
       <SiteFooter />
     </>
