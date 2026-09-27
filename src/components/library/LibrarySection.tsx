@@ -17,7 +17,13 @@ import {
 import { BookDetails } from "./BookDetails";
 import type { ShelfController } from "./BookshelfScene";
 import { ShelfOverview } from "./ShelfOverview";
-import { buyLink, libraryBooks, shelves, type ShelfId } from "./books";
+import {
+  bookPages,
+  buyLink,
+  libraryBooks,
+  shelves,
+  type ShelfId,
+} from "./books";
 
 const BookshelfScene = dynamic(() => import("./BookshelfScene"), {
   ssr: false,
@@ -48,9 +54,12 @@ const glass =
 export function LibrarySection({
   header,
   shelf,
+  onDetailsChange,
 }: {
   header?: ReactNode;
   shelf?: ShelfId;
+  /** Called when the book details below the section appear or go away. */
+  onDetailsChange?: (shown: boolean) => void;
 }) {
   const initialSlot = middleSlot(shelf);
   const [filter, setFilter] = useState<ShelfId | "all">(shelf ?? "all");
@@ -60,6 +69,10 @@ export function LibrarySection({
   const [selected, setSelected] = useState<number | null>(null);
   const [panelVisible, setPanelVisible] = useState(false);
   const [overview, setOverview] = useState(false);
+  const [reading, setReading] = useState<{ n: number; dir: 1 | -1 }>({
+    n: 0,
+    dir: 1,
+  });
   const [live, setLive] = useState(!shelf);
   const titleId = useId();
 
@@ -68,6 +81,7 @@ export function LibrarySection({
 
   const sectionRef = useRef<HTMLElement>(null);
   const thumbRef = useRef<HTMLSpanElement>(null);
+  const tipRef = useRef<HTMLSpanElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
   const snapTimer = useRef<number | undefined>(undefined);
   const drag = useRef<{ x: number; start: number } | null>(null);
@@ -78,6 +92,7 @@ export function LibrarySection({
     opening: false,
     openT: 0,
     hovered: null,
+    turning: false,
     dragMoved: false,
     reducedMotion: false,
     visible: inShelf(shelf),
@@ -93,6 +108,10 @@ export function LibrarySection({
     observer.observe(node);
     return () => observer.disconnect();
   }, [live]);
+
+  useEffect(() => {
+    onDetailsChange?.(selected !== null);
+  }, [selected, onDetailsChange]);
 
   const visibleBooks = useMemo(
     () =>
@@ -111,6 +130,17 @@ export function LibrarySection({
     c.reducedMotion = window.matchMedia(
       "(prefers-reduced-motion: reduce)",
     ).matches;
+    c.onHover = (index, x, y) => {
+      const tip = tipRef.current;
+      if (!tip) return;
+      if (index === null) {
+        tip.style.opacity = "0";
+        return;
+      }
+      tip.textContent = libraryBooks[index].title;
+      tip.style.transform = `translate(${x}px, ${y}px) translate(-50%, -100%)`;
+      tip.style.opacity = "1";
+    };
     c.onDisplay = (display) => {
       const last = Math.max(1, slotCountRef.current - 1);
       if (thumbRef.current)
@@ -118,6 +148,7 @@ export function LibrarySection({
     };
     return () => {
       c.onDisplay = undefined;
+      c.onHover = undefined;
     };
   }, [slotCount]);
 
@@ -154,7 +185,19 @@ export function LibrarySection({
     c.target = c.visible.slice(0, index).filter(Boolean).length;
     c.hovered = null;
     document.body.style.cursor = "";
+    setReading({ n: 0, dir: 1 });
     setSelected(index);
+  }, []);
+
+  /** Next page wraps round to the first; the first page has nothing before it. */
+  const turn = useCallback((dir: 1 | -1) => {
+    const c = controller.current;
+    if (c.selected === null || !c.opening || c.turning) return;
+    const count = bookPages(libraryBooks[c.selected]).length;
+    setReading((r) => {
+      if (count < 2 || (dir < 0 && r.n === 0)) return r;
+      return { n: (r.n + dir + count) % count, dir };
+    });
   }, []);
 
   const close = useCallback(() => {
@@ -213,11 +256,13 @@ export function LibrarySection({
       const middle = window.innerHeight / 2;
       if (!rect || rect.top > middle || rect.bottom < middle) return;
       event.preventDefault();
-      step(event.key === "ArrowLeft" ? -1 : 1);
+      const dir = event.key === "ArrowLeft" ? -1 : 1;
+      if (controller.current.selected !== null) turn(dir);
+      else step(dir);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [close, closeOverview, overview, step]);
+  }, [close, closeOverview, overview, step, turn]);
 
   const onStagePointerDown = (event: PointerEvent<HTMLDivElement>) => {
     const c = controller.current;
@@ -271,6 +316,13 @@ export function LibrarySection({
   const facing = libraryBooks[centered] ?? visibleBooks[0]?.book;
   const facingSlot = visibleBooks.findIndex(({ index }) => index === centered);
   const isOpen = selected !== null;
+  const pageCount = book ? bookPages(book).length : 0;
+  const page = useMemo(() => {
+    if (selected === null) return null;
+    const pages = bookPages(libraryBooks[selected]);
+    const n = Math.min(reading.n, pages.length - 1);
+    return { index: selected, insight: pages[n], n, dir: reading.dir };
+  }, [selected, reading]);
   const Heading = shelf ? "h2" : "h1";
 
   return (
@@ -324,11 +376,19 @@ export function LibrarySection({
               onCenteredChange={setCentered}
               onPanelChange={setPanelVisible}
               onClosed={handleClosed}
+              onTurn={turn}
+              page={page}
             />
           )}
         </div>
 
         <div className="library-grain pointer-events-none absolute -inset-1/2" />
+
+        <span
+          ref={tipRef}
+          aria-hidden
+          className="pointer-events-none absolute top-0 left-0 z-20 rounded-[8px] border border-white/15 bg-black/70 px-2.5 py-1 text-[13px] leading-tight whitespace-nowrap text-white opacity-0 shadow-[0_6px_18px_rgba(0,0,0,0.35)] backdrop-blur-md transition-opacity duration-150"
+        />
 
         {header && (
           <div className="absolute inset-x-0 top-0 z-[45]">{header}</div>
@@ -480,27 +540,79 @@ export function LibrarySection({
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={close}
-          tabIndex={isOpen ? 0 : -1}
+        <div
           aria-hidden={!isOpen}
-          className={`absolute top-24 right-4 z-20 flex h-[44px] items-center gap-2 rounded-[13px] pr-3 pl-4 text-sm duration-500 md:top-auto md:right-auto md:bottom-8 md:left-1/2 md:-translate-x-1/2 ${glass} ${
-            isOpen ? "opacity-100" : "pointer-events-none opacity-0"
+          className={`absolute inset-x-0 top-24 z-20 flex items-center justify-center gap-2 px-4 transition-opacity duration-500 md:top-auto md:right-auto md:bottom-8 md:left-[34%] md:-translate-x-1/2 md:px-0 ${
+            panelVisible ? "opacity-100" : "pointer-events-none opacity-0"
           }`}
         >
-          Close
-          <kbd className="hidden rounded-md border border-current/30 px-1.5 py-0.5 font-sans text-[10px] tracking-wider opacity-70 sm:inline">
-            ESC
-          </kbd>
-          <svg viewBox="0 0 16 16" className="size-4 sm:hidden" aria-hidden>
-            <path
-              d="M4 4l8 8M12 4l-8 8"
-              stroke="currentColor"
-              strokeWidth="1.5"
-            />
-          </svg>
-        </button>
+          {pageCount > 1 && (
+            <div
+              role="group"
+              aria-label="Pages"
+              className="flex h-[44px] items-center gap-1 rounded-[13px] border border-white/10 bg-white/20 px-1 text-sm text-white backdrop-blur-[20px]"
+            >
+              <button
+                type="button"
+                aria-label="Previous page"
+                tabIndex={isOpen ? 0 : -1}
+                disabled={reading.n === 0}
+                onClick={() => turn(-1)}
+                className="grid size-9 place-items-center rounded-[10px] transition-colors hover:bg-white/15 disabled:opacity-35 disabled:hover:bg-transparent"
+              >
+                <svg viewBox="0 0 16 16" className="size-4" aria-hidden>
+                  <path
+                    d="M10 3L5 8l5 5"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                  />
+                </svg>
+              </button>
+              <span aria-live="polite" className="px-1 whitespace-nowrap">
+                Page {Math.min(reading.n, pageCount - 1) + 1} of {pageCount}
+                <span className="hidden text-white/60 lg:inline">
+                  {" "}
+                  · click the page to turn
+                </span>
+              </span>
+              <button
+                type="button"
+                aria-label="Next page"
+                tabIndex={isOpen ? 0 : -1}
+                onClick={() => turn(1)}
+                className="grid size-9 place-items-center rounded-[10px] transition-colors hover:bg-white/15"
+              >
+                <svg viewBox="0 0 16 16" className="size-4" aria-hidden>
+                  <path
+                    d="M6 3l5 5-5 5"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                  />
+                </svg>
+              </button>
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={close}
+            tabIndex={isOpen ? 0 : -1}
+            className={`flex h-[44px] items-center gap-2 rounded-[13px] pr-3 pl-4 text-sm ${glass}`}
+          >
+            Close
+            <kbd className="hidden rounded-md border border-current/30 px-1.5 py-0.5 font-sans text-[10px] tracking-wider opacity-70 sm:inline">
+              ESC
+            </kbd>
+            <svg viewBox="0 0 16 16" className="size-4 sm:hidden" aria-hidden>
+              <path
+                d="M4 4l8 8M12 4l-8 8"
+                stroke="currentColor"
+                strokeWidth="1.5"
+              />
+            </svg>
+          </button>
+        </div>
 
         {!shelf && (
           <>
@@ -544,7 +656,7 @@ export function LibrarySection({
           aria-labelledby={titleId}
           aria-hidden={!panelVisible}
           data-visible={panelVisible}
-          className={`library-panel absolute inset-x-3 bottom-3 z-20 max-h-[46%] overflow-y-auto rounded-2xl border border-white/10 bg-(--lib-glass-strong) p-5 backdrop-blur-xl transition-opacity duration-300 sm:inset-x-6 sm:bottom-6 sm:p-6 md:inset-x-auto md:top-1/2 md:right-[4%] md:bottom-auto md:max-h-[80%] md:w-[min(520px,42%)] md:-translate-y-1/2 md:border-0 md:bg-transparent md:p-0 md:backdrop-blur-none xl:right-[6%] ${
+          className={`library-panel absolute inset-x-3 bottom-3 z-20 max-h-[46%] overflow-y-auto rounded-2xl border border-white/10 bg-(--lib-glass-strong) p-5 backdrop-blur-xl transition-opacity duration-300 sm:inset-x-6 sm:bottom-6 sm:p-6 md:inset-x-auto md:top-1/2 md:right-[4%] md:bottom-auto md:max-h-[80%] md:w-[min(420px,30%)] md:-translate-y-1/2 md:border-0 md:bg-transparent md:p-0 md:backdrop-blur-none xl:right-[6%] ${
             panelVisible ? "opacity-100" : "pointer-events-none opacity-0"
           }`}
         >
@@ -558,7 +670,7 @@ export function LibrarySection({
               </p>
               <h2
                 id={titleId}
-                className="library-cascade mt-3 font-[Georgia,'Times_New_Roman',serif] text-[34px] leading-[1.08] tracking-[-0.02em] text-white sm:text-[44px] xl:text-[56px]"
+                className="library-cascade mt-3 font-[Georgia,'Times_New_Roman',serif] text-[30px] leading-[1.08] tracking-[-0.02em] text-white sm:text-[38px] xl:text-[48px]"
                 style={{ "--i": 1 } as CSSProperties}
               >
                 {book.title}

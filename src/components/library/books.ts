@@ -5,18 +5,19 @@ export type InsightKind = "points" | "commentary" | "quotes";
 export type BookInsight = {
   kind: InsightKind;
   text: string;
-  /** Extra paragraphs shown after `text` in the points/commentary popup. */
+  /** Extra paragraphs printed after `text` on the page. */
   detail?: string[];
   page?: string;
   chapter?: string;
+  /**
+   * "book" when the text is printed in the original book, "aas" when AAS wrote it.
+   * Defaults to "book" for quotes and "aas" for points and commentary.
+   */
+  source?: "book" | "aas";
 };
 
-export const insightFilters: { id: InsightKind | "all"; label: string }[] = [
-  { id: "all", label: "All" },
-  { id: "points", label: "Points" },
-  { id: "commentary", label: "Commentary" },
-  { id: "quotes", label: "Quotes" },
-];
+export const isFromBook = (insight: BookInsight) =>
+  (insight.source ?? (insight.kind === "quotes" ? "book" : "aas")) === "book";
 
 export const shelves: { id: ShelfId | "all"; label: string }[] = [
   { id: "all", label: "All" },
@@ -37,7 +38,7 @@ export type LibraryBook = {
   rating?: number;
   /** Short badge beside the rating; defaults to "Highly Recommend". */
   verdict?: string;
-  /** Cards for the "Insights & Quotes" grid; falls back to the synopsis and excerpt. */
+  /** Pages printed in the open book; falls back to the excerpt and synopsis. */
   insights?: BookInsight[];
   synopsis: string;
   excerpt: string;
@@ -408,11 +409,11 @@ export function storeLinks(book: LibraryBook) {
   };
 }
 
-export function insightsFor(book: LibraryBook): BookInsight[] {
-  return (
-    book.insights ?? [
-      { kind: "commentary", text: book.synopsis },
-      { kind: "quotes", text: book.excerpt },
-    ]
-  );
+/** The pages of the open book, in reading order: passages from the book first, then AAS's own writing. */
+export function bookPages(book: LibraryBook): BookInsight[] {
+  const all = book.insights ?? [
+    { kind: "quotes", text: book.excerpt },
+    { kind: "commentary", text: book.synopsis },
+  ];
+  return [...all.filter(isFromBook), ...all.filter((i) => !isFromBook(i))];
 }

@@ -12,12 +12,14 @@ import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import * as THREE from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import {
+  copyPageTexture,
   createBookTextures,
+  createReadingPage,
   createSharedTextures,
   type BookTextures,
   type SharedTextures,
 } from "./bookTextures";
-import type { LibraryBook } from "./books";
+import type { BookInsight, LibraryBook } from "./books";
 import { BACKDROP_RATIO, scenePalette, TABLE_LINE } from "./palette";
 
 /** Mutable state shared between the DOM controls and the render loop (no React re-renders per frame). */
@@ -28,11 +30,15 @@ export type ShelfController = {
   opening: boolean;
   openT: number;
   hovered: number | null;
+  /** A page of the open book is mid-turn; further turns wait for it. */
+  turning: boolean;
   dragMoved: boolean;
   reducedMotion: boolean;
   /** Which books pass the active shelf filter; target/display are slot positions among these. */
   visible: boolean[];
   onDisplay?: (display: number) => void;
+  /** Screen position (canvas pixels) just above the hovered book, or null when nothing is hovered. */
+  onHover?: (index: number | null, x: number, y: number) => void;
 };
 
 type SceneProps = {
@@ -42,11 +48,23 @@ type SceneProps = {
   onCenteredChange: (index: number) => void;
   onPanelChange: (visible: boolean) => void;
   onClosed: () => void;
+  /** Clicking the open book's right page turns forward (1), its left page back (-1). */
+  onTurn: (dir: 1 | -1) => void;
+  /** Page `n` of the open book, reached by turning in `dir`. */
+  page?: {
+    index: number;
+    insight: BookInsight;
+    n: number;
+    dir: 1 | -1;
+  } | null;
 };
 
 type BookHandle = {
   group: THREE.Group;
   hinge: THREE.Group;
+  leaf: THREE.Group;
+  leafFront: THREE.MeshStandardMaterial;
+  page: THREE.MeshStandardMaterial;
   materials: THREE.MeshStandardMaterial[];
 };
 
@@ -58,10 +76,17 @@ const FRONT_Z = 0.82;
 const GAP = 0.035;
 const COVER_MARGIN = 0.2;
 const OPEN_SECONDS = 1.8;
-const HINGE_ANGLE = (-144 * Math.PI) / 180;
+/** Opened almost flat so both pages face the reader. */
+const HINGE_ANGLE = (-168 * Math.PI) / 180;
 const PANEL_REVEAL = 0.72;
 const FLY_STAGGER = 0.065;
 const FLY_SECONDS = 1.2;
+const TURN_SECONDS = 0.9;
+/** Width of the open book in book widths: the page plus the cover lying back at HINGE_ANGLE. */
+const SPREAD = 2;
+/** The leaf shares the cover's hinge; it starts on the page block and lands just above the cover's inner face. */
+const LEAF_Z = -BOARD / 2 + 0.003;
+const LEAF_LIFT = 0.007;
 
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 const smooth = (v: number) => {
@@ -93,6 +118,7 @@ function Book({
   shared,
   onRegister,
   onSelect,
+  onTurn,
   controller,
 }: {
   book: LibraryBook;
@@ -101,11 +127,13 @@ function Book({
   shared: SharedTextures;
   onRegister: (index: number, handle: BookHandle | null) => void;
   onSelect: (index: number) => void;
+  onTurn: (dir: 1 | -1) => void;
   controller: RefObject<ShelfController>;
 }) {
   const { width: W, height: H, thickness: T } = book;
   const groupRef = useRef<THREE.Group>(null);
   const hingeRef = useRef<THREE.Group>(null);
+  const leafRef = useRef<THREE.Group>(null);
 
   const geometry = useMemo(() => {
     const spine = new THREE.CylinderGeometry(
@@ -122,6 +150,7 @@ function Book({
     return {
       board: new THREE.BoxGeometry(W, H, BOARD),
       pages: new THREE.BoxGeometry(W - 0.05, H - 0.07, T - 2 * BOARD),
+      leaf: new THREE.PlaneGeometry(W - 0.05, H - 0.07),
       spine,
     };
   }, [W, H, T]);
@@ -161,20 +190,42 @@ function Book({
       map: shared.edgeHorizontal,
       roughness: 0.95,
     });
+    const leafFront = new THREE.MeshStandardMaterial({ roughness: 0.95 });
+    const leafBack = new THREE.MeshStandardMaterial({
+      map: shared.pageBack,
+      roughness: 0.95,
+      side: THREE.BackSide,
+    });
     return {
+      page,
+      leafFront,
+      leafBack,
       back: [cloth, cloth, cloth, cloth, cloth, cloth],
       front: [cloth, cloth, cloth, cloth, cover, inside],
       pages: [edgeV, edgeV, edgeH, edgeH, page, edgeH],
       spine: [spine, cloth, cloth],
-      all: [cloth, cover, spine, inside, page, edgeV, edgeH],
+      all: [
+        cloth,
+        cover,
+        spine,
+        inside,
+        page,
+        edgeV,
+        edgeH,
+        leafFront,
+        leafBack,
+      ],
     };
   }, [textures, shared]);
 
   useEffect(() => {
-    if (groupRef.current && hingeRef.current) {
+    if (groupRef.current && hingeRef.current && leafRef.current) {
       onRegister(index, {
         group: groupRef.current,
         hinge: hingeRef.current,
+        leaf: leafRef.current,
+        leafFront: materials.leafFront,
+        page: materials.page,
         materials: materials.all,
       });
     }
@@ -185,15 +236,34 @@ function Book({
     () => () => {
       geometry.board.dispose();
       geometry.pages.dispose();
+      geometry.leaf.dispose();
       geometry.spine.dispose();
     },
     [geometry],
   );
-  useEffect(() => () => materials.all.forEach((m) => m.dispose()), [materials]);
+  useEffect(
+    () => () => {
+      materials.leafFront.map?.dispose();
+      materials.all.forEach((m) => m.dispose());
+    },
+    [materials],
+  );
 
   const handleClick = (event: ThreeEvent<MouseEvent>) => {
     event.stopPropagation();
-    if (controller.current.dragMoved) return;
+    const c = controller.current;
+    if (c.dragMoved) return;
+    if (c.selected === index && c.opening) {
+      // Raycasts also hit the hidden leaf lying over the right page, so read the first visible surface.
+      const hit = event.intersections.find(({ object }) => {
+        for (let o: THREE.Object3D | null = object; o; o = o.parent)
+          if (!o.visible) return false;
+        return true;
+      });
+      if (c.openT >= PANEL_REVEAL && !c.turning)
+        onTurn(hit?.object.name === "left" ? -1 : 1);
+      return;
+    }
     onSelect(index);
   };
   const handleOver = (event: ThreeEvent<PointerEvent>) => {
@@ -235,8 +305,27 @@ function Book({
         castShadow
         receiveShadow
       />
+      <group
+        ref={leafRef}
+        visible={false}
+        position={[-W / 2, 0, T / 2 - BOARD / 2]}
+      >
+        <mesh
+          name="left"
+          geometry={geometry.leaf}
+          material={materials.leafFront}
+          position={[(W - 0.05) / 2, 0, LEAF_Z]}
+        />
+        <mesh
+          name="left"
+          geometry={geometry.leaf}
+          material={materials.leafBack}
+          position={[(W - 0.05) / 2, 0, LEAF_Z]}
+        />
+      </group>
       <group ref={hingeRef} position={[-W / 2, 0, T / 2 - BOARD / 2]}>
         <mesh
+          name="left"
           geometry={geometry.board}
           material={materials.front}
           position={[W / 2, 0, 0]}
@@ -265,8 +354,12 @@ function Shelf({
   onCenteredChange,
   onPanelChange,
   onClosed,
+  onTurn,
+  page,
 }: SceneProps) {
   const { camera, size, gl, scene } = useThree();
+  const shown = useRef<{ index: number; n: number } | null>(null);
+  const tip = useMemo(() => new THREE.Vector3(), []);
   const [assets, setAssets] = useState<{
     books: BookTextures[];
     shared: SharedTextures;
@@ -282,7 +375,68 @@ function Shelf({
     centered: -1,
     panel: false,
     baseY: -1.25,
+    /** Book whose leaf is visible: turning, or resting on the open cover. */
+    turning: -1,
+    turnT: 1,
+    turnDir: 1 as 1 | -1,
+    /** The page revealed once a backward turn lands. */
+    pending: null as THREE.Texture | null,
+    /** Pages remain turned over on the left once a backward turn lands. */
+    keepLeaf: false,
+    tipShown: false,
   });
+
+  /** Puts `texture` on a book's right-hand page, disposing the reading page it replaces. */
+  const setPage = (index: number, texture: THREE.Texture) => {
+    const handle = handles.current[index];
+    if (!handle || !assets) return;
+    const old = handle.page.map;
+    handle.page.map = texture;
+    handle.page.needsUpdate = true;
+    if (old && old !== texture && old !== assets.books[index].page)
+      old.dispose();
+  };
+  const setLeaf = (handle: BookHandle, texture: THREE.Texture) => {
+    handle.leafFront.map?.dispose();
+    handle.leafFront.map = texture;
+    handle.leafFront.needsUpdate = true;
+  };
+
+  useEffect(() => {
+    if (!assets || !page) return;
+    const handle = handles.current[page.index];
+    if (!handle) return;
+    const prev = shown.current;
+    if (prev?.index === page.index && prev.n === page.n) return;
+    shown.current = { index: page.index, n: page.n };
+    const next = createReadingPage(books[page.index], page.insight, page.n);
+    const c = controller.current;
+    const a = anim.current;
+    const turn =
+      prev?.index === page.index && c.selected === page.index && c.openT > 0.5;
+    a.pending?.dispose();
+    a.pending = null;
+    if (!turn) {
+      setPage(page.index, next);
+      a.turning = -1;
+      return;
+    }
+    a.turning = page.index;
+    a.turnT = 0;
+    a.turnDir = page.dir;
+    c.turning = true;
+    if (page.dir > 0) {
+      // The current page lifts off as the leaf, revealing the next one beneath.
+      if (handle.page.map) setLeaf(handle, copyPageTexture(handle.page.map));
+      setPage(page.index, next);
+    } else {
+      // A leaf comes back from the left carrying the earlier page.
+      setLeaf(handle, copyPageTexture(next));
+      a.pending = next;
+      a.keepLeaf = page.n > 0;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- setPage/setLeaf only touch refs.
+  }, [assets, page, books, controller]);
 
   useEffect(() => {
     let cancelled = false;
@@ -403,6 +557,12 @@ function Shelf({
     if (c.selected !== null) {
       c.openT = clamp01(c.openT + ((c.opening ? 1 : -1) * dt) / OPEN_SECONDS);
       if (!c.opening && c.openT === 0) {
+        setPage(c.selected, assets.books[c.selected].page);
+        a.pending?.dispose();
+        a.pending = null;
+        a.turning = -1;
+        c.turning = false;
+        shown.current = null;
         c.selected = null;
         onClosed();
       }
@@ -448,6 +608,18 @@ function Shelf({
     const recede = easeInOut(openT / 0.5);
     const glide = easeInOut(openT / 0.62);
     const hingeT = easeInOut((openT - 0.38) / 0.62);
+    if (a.turning >= 0 && a.turnT < 1) {
+      a.turnT = Math.min(1, a.turnT + dt / TURN_SECONDS);
+      if (a.turnT === 1) {
+        c.turning = false;
+        if (a.turnDir < 0) {
+          if (a.pending) setPage(a.turning, a.pending);
+          a.pending = null;
+          if (a.keepLeaf) a.turnDir = 1;
+          else a.turning = -1;
+        }
+      }
+    }
 
     const pose: Pose = { x: 0, y: 0, z: 0, rx: 0, ry: 0, rz: 0, s: 1 };
     for (let i = 0; i < count; i++) {
@@ -511,13 +683,22 @@ function Shelf({
 
       if (selected !== null) {
         if (i === selected) {
-          const s = narrow ? 0.92 : 1.12;
-          const spineX = narrow ? -book.width * s * 0.02 : -visibleW * 0.16;
+          // Sized to read: the open spread, centred on the spine, fills the space beside the panel.
+          const s = narrow
+            ? Math.min(
+                (0.94 * visibleW) / (SPREAD * book.width),
+                (0.5 * visibleH) / book.height,
+              )
+            : Math.min(
+                (0.6 * visibleW) / (SPREAD * book.width),
+                (0.72 * visibleH) / book.height,
+              );
+          const spineX = narrow ? 0 : -0.16 * visibleW;
           const target: Pose = {
             x: spineX + (book.width / 2) * s,
-            y: narrow ? visibleH * 0.2 : 0.05,
+            y: narrow ? visibleH * 0.17 : -0.03 * visibleH,
             z: openZ,
-            rx: -0.22,
+            rx: -0.08,
             ry: 0,
             rz: 0,
             s,
@@ -543,6 +724,14 @@ function Shelf({
       g.rotation.set(pose.rx, pose.ry, pose.rz);
       g.scale.setScalar(pose.s);
       handle.hinge.rotation.y = hinge;
+      handle.leaf.visible = i === a.turning;
+      if (i === a.turning) {
+        const eased = easeInOut(a.turnT);
+        const t = a.turnDir > 0 ? eased : 1 - eased;
+        handle.leaf.rotation.y = Math.max(HINGE_ANGLE * t, hinge);
+        for (const side of handle.leaf.children)
+          side.position.z = LEAF_Z - LEAF_LIFT * t;
+      }
 
       g.visible = opacity > 0.01;
       const fading = opacity < 0.999;
@@ -557,6 +746,35 @@ function Shelf({
       g.traverse((obj) => {
         if ((obj as THREE.Mesh).isMesh) obj.castShadow = opacity > 0.4;
       });
+    }
+
+    const hovered = c.hovered;
+    const hoverGroup =
+      hovered !== null ? handles.current[hovered]?.group : null;
+    if (
+      hovered !== null &&
+      hoverGroup?.visible &&
+      selected === null &&
+      a.presence[hovered] > 0.5
+    ) {
+      tip
+        .set(
+          hoverGroup.position.x,
+          hoverGroup.position.y +
+            (books[hovered].height / 2) * hoverGroup.scale.y +
+            0.08,
+          hoverGroup.position.z,
+        )
+        .project(camera);
+      c.onHover?.(
+        hovered,
+        ((tip.x + 1) / 2) * size.width,
+        ((1 - tip.y) / 2) * size.height,
+      );
+      a.tipShown = true;
+    } else if (a.tipShown) {
+      c.onHover?.(null, 0, 0);
+      a.tipShown = false;
     }
   });
 
@@ -604,6 +822,7 @@ function Shelf({
             shared={assets.shared}
             onRegister={register}
             onSelect={onSelect}
+            onTurn={onTurn}
             controller={controller}
           />
         ))}

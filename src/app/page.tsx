@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { SiteFooter } from "@/components/home/SiteFooter";
 import { PageHeader } from "@/components/home/PageHeader";
-import { LibrarySection } from "@/components/library/LibrarySection";
+import { LibraryCollections } from "@/components/library/LibraryCollections";
 
 export const metadata: Metadata = {
   title: "The Founder’s Shelf — Abdallah Abu-Sheikh",
@@ -13,12 +13,9 @@ export default function LibraryPage() {
   return (
     <>
       <main className="flex-1 bg-black">
-        <LibrarySection
+        <LibraryCollections
           header={<PageHeader active="library" onDark={false} />}
         />
-        <LibrarySection shelf="arabic" />
-        <LibrarySection shelf="sufism" />
-        <LibrarySection shelf="islamic" />
       </main>
       <SiteFooter />
     </>

@@ -1,8 +1,15 @@
 import * as THREE from "three";
-import type { LibraryBook } from "./books";
+import {
+  bookPages,
+  isFromBook,
+  type BookInsight,
+  type LibraryBook,
+} from "./books";
 
 /** Canvas pixels per scene unit. */
 const PPU = 420;
+/** The open book fills most of the screen, so its pages are redrawn sharper. */
+const READ_PPU = 1000;
 
 type Mode = "color" | "mask";
 
@@ -21,6 +28,7 @@ export type BookTextures = {
 export type SharedTextures = {
   edgeVertical: THREE.CanvasTexture;
   edgeHorizontal: THREE.CanvasTexture;
+  pageBack: THREE.CanvasTexture;
 };
 
 function makeCanvas(width: number, height: number) {
@@ -431,66 +439,309 @@ function drawInsideCover(book: LibraryBook, serif: string): HTMLCanvasElement {
   return canvas;
 }
 
-function drawFirstPage(book: LibraryBook, serif: string): HTMLCanvasElement {
-  const w = book.width * PPU;
-  const h = book.height * PPU;
-  const { canvas, ctx } = makeCanvas(w, h);
-  const rand = seeded(`${book.id}-page`);
-  const unit = w / 60;
+const INK = "#2a2118";
 
-  ctx.fillStyle = "#f1e8d6";
+function paintPaper(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+  rand: () => number,
+  tint: string,
+  spine: "left" | "right" = "left",
+) {
+  ctx.fillStyle = tint;
   ctx.fillRect(0, 0, w, h);
-  // Paper tooth.
-  for (let i = 0; i < 2600; i++) {
+  const k = w / 540;
+  for (let i = 0; i < 2600 * k * k; i++) {
     ctx.fillStyle =
       rand() > 0.5 ? "rgba(90,70,40,0.05)" : "rgba(255,255,255,0.08)";
-    ctx.fillRect(rand() * w, rand() * h, 1.5, 1.5);
+    ctx.fillRect(rand() * w, rand() * h, 1.5 * k, 1.5 * k);
   }
-  // Gutter shadow along the spine (left edge of the right-hand page).
-  const gutter = ctx.createLinearGradient(0, 0, w * 0.18, 0);
+  // Gutter shadow along the spine edge.
+  const x0 = spine === "left" ? 0 : w;
+  const gutter = ctx.createLinearGradient(
+    x0,
+    0,
+    spine === "left" ? w * 0.18 : w * 0.82,
+    0,
+  );
   gutter.addColorStop(0, "rgba(60,40,20,0.28)");
   gutter.addColorStop(1, "rgba(60,40,20,0)");
   ctx.fillStyle = gutter;
-  ctx.fillRect(0, 0, w * 0.18, h);
+  ctx.fillRect(0, 0, w, h);
+}
 
-  ctx.fillStyle = "#2a2118";
-  ctx.textAlign = "center";
+/** Wraps paragraphs at `size`, shrinking until they fit `maxLines`; the last line is ellipsised if they never do. */
+function fitParagraphs(
+  ctx: CanvasRenderingContext2D,
+  paragraphs: string[],
+  font: (size: number) => string,
+  size: number,
+  minSize: number,
+  maxWidth: number,
+  height: number,
+  leading: number,
+) {
+  for (;;) {
+    ctx.font = font(size);
+    const lines = paragraphs.flatMap((p, i) => [
+      ...(i > 0 ? [""] : []),
+      ...wrapLines(ctx, p, maxWidth),
+    ]);
+    const maxLines = Math.floor(height / (size * leading));
+    if (lines.length <= maxLines || size <= minSize) {
+      if (lines.length > maxLines) {
+        lines.length = Math.max(1, maxLines);
+        let last = lines[lines.length - 1];
+        while (last && ctx.measureText(`${last}…`).width > maxWidth)
+          last = last.slice(0, last.lastIndexOf(" "));
+        lines[lines.length - 1] = `${last}…`;
+      }
+      return { lines, size, lh: size * leading };
+    }
+    size *= 0.93;
+  }
+}
+
+/** A line of greyed-out "words", standing in for the book text around a passage. */
+function drawGreekedLine(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  baseline: number,
+  width: number,
+  size: number,
+  rand: () => number,
+) {
+  ctx.fillStyle = "rgba(42,33,24,0.2)";
+  let cursor = x;
+  while (cursor < x + width) {
+    const word = Math.min(size * (0.8 + rand() * 2.6), x + width - cursor);
+    if (word > size * 0.4)
+      ctx.fillRect(cursor, baseline - size * 0.55, word, size * 0.42);
+    cursor += word + size * 0.38;
+  }
+}
+
+/** A page of the book with the passage highlighted in place. */
+function drawQuotePage(
+  ctx: CanvasRenderingContext2D,
+  book: LibraryBook,
+  insight: BookInsight,
+  serif: string,
+  w: number,
+  h: number,
+  n: number,
+) {
+  const rand = seeded(`${book.id}-${insight.text}`);
+  const unit = w / 60;
+  paintPaper(ctx, w, h, rand, "#f1e8d6");
+
+  // Running head: section number on the left, chapter (or title) on the right.
   ctx.textBaseline = "alphabetic";
-
-  ctx.font = `500 ${unit * 2.1}px ${serif}`;
+  ctx.fillStyle = "#8a6a2f";
+  ctx.font = `600 ${unit * 2.4}px ${serif}`;
+  ctx.textAlign = "left";
   drawSpacedText(
     ctx,
-    book.category.toUpperCase(),
-    w / 2,
-    h * 0.14,
-    unit * 0.45,
+    sectionLabel(n),
+    unit * 9 + ctx.measureText(sectionLabel(n)).width / 2 + unit * 1.2,
+    h * 0.075,
+    unit * 0.3,
+  );
+  ctx.fillStyle = "rgba(42,33,24,0.6)";
+  ctx.font = `italic 400 ${unit * 2.2}px ${serif}`;
+  ctx.textAlign = "right";
+  ctx.fillText(insight.chapter ?? book.title, w - unit * 6, h * 0.075);
+  ctx.fillRect(unit * 9, h * 0.092, w - unit * 15, unit * 0.12);
+
+  const left = unit * 9;
+  const width = w - left - unit * 6;
+  const top = h * 0.14;
+  const bottom = h * 0.88;
+  const { lines, size, lh } = fitParagraphs(
+    ctx,
+    [insight.text, ...(insight.detail ?? [])],
+    (s) => `400 ${s}px ${serif}`,
+    unit * 3.7,
+    unit * 2.2,
+    width,
+    (bottom - top) * 0.7,
+    1.5,
+  );
+  const capacity = Math.floor((bottom - top) / lh);
+  const before = Math.max(1, Math.floor((capacity - lines.length) * 0.4));
+  const after = Math.max(0, capacity - lines.length - before);
+
+  let y = top + lh;
+  for (let i = 0; i < before; i++, y += lh) {
+    const last = i === before - 1;
+    drawGreekedLine(ctx, left, y, width * (last ? 0.45 : 1), size, rand);
+  }
+  ctx.textAlign = "left";
+  ctx.font = `400 ${size}px ${serif}`;
+  for (const line of lines) {
+    if (line) {
+      const lineW = ctx.measureText(line).width;
+      ctx.fillStyle = "rgba(247,204,74,0.62)";
+      ctx.beginPath();
+      ctx.moveTo(left - size * 0.2, y - size * 0.92);
+      ctx.lineTo(left + lineW + size * 0.25, y - size * 0.98);
+      ctx.lineTo(left + lineW + size * 0.2, y + size * 0.3);
+      ctx.lineTo(left - size * 0.25, y + size * 0.34);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = INK;
+      ctx.fillText(line, left, y);
+    }
+    y += lh;
+  }
+  for (let i = 0; i < after; i++, y += lh)
+    drawGreekedLine(
+      ctx,
+      left,
+      y,
+      width * (i === after - 1 ? 0.6 : 1),
+      size,
+      rand,
+    );
+
+  drawFolio(
+    ctx,
+    pageNumber(insight, n),
+    w / 2 + unit * 1.5,
+    h * 0.945,
+    unit,
+    serif,
+  );
+}
+
+const sectionLabel = (n: number) => `SECTION ${n + 1}`;
+/** The page in the original book when known, else the page's place in this reader. */
+const pageNumber = (insight: BookInsight, n: number) =>
+  insight.page
+    ? `p. ${insight.page.replace(/^p\.?\s*/i, "")}`
+    : `Page ${n + 1}`;
+
+/** A centred page number between two short rules. */
+function drawFolio(
+  ctx: CanvasRenderingContext2D,
+  label: string,
+  cx: number,
+  y: number,
+  unit: number,
+  serif: string,
+) {
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = "rgba(42,33,24,0.75)";
+  ctx.font = `italic 500 ${unit * 2.8}px ${serif}`;
+  ctx.fillText(label, cx, y);
+  const half = ctx.measureText(label).width / 2 + unit * 1.4;
+  ctx.fillRect(cx - half - unit * 3, y - unit * 0.06, unit * 3, unit * 0.12);
+  ctx.fillRect(cx + half, y - unit * 0.06, unit * 3, unit * 0.12);
+  ctx.textBaseline = "alphabetic";
+}
+
+/** A custom leaf tipped into the book for passages AAS wrote himself. */
+function drawAasPage(
+  ctx: CanvasRenderingContext2D,
+  book: LibraryBook,
+  insight: BookInsight,
+  serif: string,
+  w: number,
+  h: number,
+  n: number,
+) {
+  const rand = seeded(`${book.id}-aas-${insight.text}`);
+  const unit = w / 60;
+  paintPaper(ctx, w, h, rand, "#f6efdf");
+
+  ctx.strokeStyle = "rgba(138,106,47,0.55)";
+  ctx.lineWidth = unit * 0.25;
+  ctx.strokeRect(unit * 6, unit * 6, w - unit * 10, h - unit * 12);
+
+  ctx.textAlign = "center";
+  ctx.textBaseline = "alphabetic";
+  ctx.fillStyle = "#8a6a2f";
+  ctx.font = `600 ${unit * 2.3}px ${serif}`;
+  drawSpacedText(
+    ctx,
+    "WRITTEN BY AAS",
+    w / 2 + unit * 2,
+    h * 0.12,
+    unit * 0.55,
+  );
+  drawDiamondRule(ctx, w / 2 + unit * 2, h * 0.15, unit * 7, unit);
+  ctx.fillStyle = "rgba(42,33,24,0.6)";
+  ctx.font = `italic 400 ${unit * 2.2}px ${serif}`;
+  const heading = insight.kind === "points" ? "Notes on" : "On";
+  const section = sectionLabel(n).replace("SECTION", "Section");
+  ctx.fillText(
+    `${section} · ${insight.chapter ?? `${heading} ${book.title}`}`,
+    w / 2 + unit * 2,
+    h * 0.195,
   );
 
-  ctx.fillStyle = "rgba(42,33,24,0.35)";
-  ctx.font = `italic 400 ${unit * 11}px ${serif}`;
-  ctx.fillText("“", w / 2, h * 0.3);
+  const left = unit * 11;
+  const width = w - left - unit * 8;
+  const top = h * 0.25;
+  const { lines, lh } = fitParagraphs(
+    ctx,
+    [insight.text, ...(insight.detail ?? [])],
+    (s) => `400 ${s}px ${serif}`,
+    unit * 3.7,
+    unit * 2.3,
+    width,
+    h * 0.58,
+    1.45,
+  );
+  ctx.textAlign = "left";
+  ctx.fillStyle = INK;
+  lines.forEach((line, i) => ctx.fillText(line, left, top + (i + 1) * lh));
 
-  ctx.fillStyle = "#2a2118";
-  let size = unit * 4.4;
-  ctx.font = `italic 500 ${size}px ${serif}`;
-  let lines = wrapLines(ctx, book.excerpt, w - unit * 16);
-  while (lines.length > 7 && size > unit * 3) {
-    size *= 0.92;
-    ctx.font = `italic 500 ${size}px ${serif}`;
-    lines = wrapLines(ctx, book.excerpt, w - unit * 16);
-  }
-  const lh = size * 1.32;
-  const top = h * 0.46 - ((lines.length - 1) * lh) / 2;
-  lines.forEach((line, i) => ctx.fillText(line, w / 2, top + i * lh));
-
+  ctx.textAlign = "right";
   ctx.fillStyle = "rgba(42,33,24,0.75)";
-  ctx.font = `400 ${unit * 2.4}px ${serif}`;
-  ctx.fillText(`— ${book.author}`, w / 2, top + lines.length * lh + unit * 4);
+  ctx.font = `italic 500 ${unit * 3}px ${serif}`;
+  ctx.fillText("— AAS", w - unit * 9, h * 0.855);
 
-  ctx.font = `400 ${unit * 2}px ${serif}`;
-  ctx.fillText("i", w / 2, h * 0.93);
+  drawFolio(
+    ctx,
+    pageNumber(insight, n),
+    w / 2 + unit * 2,
+    h * 0.9,
+    unit,
+    serif,
+  );
+}
 
+/** The right-hand page of the book, showing its `n`th insight. */
+function drawInsightPage(
+  book: LibraryBook,
+  insight: BookInsight,
+  n: number,
+  serif: string,
+  ppu: number,
+): HTMLCanvasElement {
+  const w = book.width * ppu;
+  const h = book.height * ppu;
+  const { canvas, ctx } = makeCanvas(w, h);
+  if (isFromBook(insight)) drawQuotePage(ctx, book, insight, serif, w, h, n);
+  else drawAasPage(ctx, book, insight, serif, w, h, n);
   return canvas;
+}
+
+/** A sharp page texture for the open book. */
+export function createReadingPage(
+  book: LibraryBook,
+  insight: BookInsight,
+  n: number,
+) {
+  return toTexture(drawInsightPage(book, insight, n, pageSerif(), READ_PPU));
+}
+
+/** A second texture over the same page artwork, so the turning leaf can outlive the page it copied. */
+export function copyPageTexture(texture: THREE.Texture) {
+  return toTexture(texture.image as HTMLCanvasElement);
 }
 
 function drawPageEdge(vertical: boolean): HTMLCanvasElement {
@@ -538,15 +789,56 @@ export function createBookTextures(
     spineMask: toTexture(spineMask, false),
     spineRough: toTexture(roughnessFromMask(spineMask), false),
     inside: toTexture(drawInsideCover(book, serif)),
-    page: toTexture(drawFirstPage(book, serif)),
+    page: toTexture(drawInsightPage(book, bookPages(book)[0], 0, serif, PPU)),
     cloth: toTexture(clothCanvas.canvas),
   };
+}
+
+/**
+ * The reverse of a turned leaf, seen as the left-hand page: greyed-out text, since the book's own words aren't ours to print.
+ * A back face shows its texture mirrored, so this is drawn mirrored to read the right way round.
+ */
+function drawPageBack(): HTMLCanvasElement {
+  const w = 1.3 * PPU * 1.6;
+  const h = 1.95 * PPU * 1.6;
+  const { canvas, ctx } = makeCanvas(w, h);
+  const rand = seeded("page-back");
+  const unit = w / 60;
+  ctx.translate(w, 0);
+  ctx.scale(-1, 1);
+  paintPaper(ctx, w, h, rand, "#f1e8d6", "right");
+
+  ctx.fillStyle = "rgba(42,33,24,0.35)";
+  ctx.fillRect(unit * 6, h * 0.092, w - unit * 15, unit * 0.12);
+  const left = unit * 6;
+  const width = w - left - unit * 9;
+  const size = unit * 3.1;
+  const lh = size * 1.5;
+  let y = h * 0.14 + lh;
+  let paragraph = 3 + Math.floor(rand() * 4);
+  while (y < h * 0.88) {
+    const end = --paragraph === 0;
+    drawGreekedLine(
+      ctx,
+      left,
+      y,
+      width * (end ? 0.3 + rand() * 0.5 : 1),
+      size,
+      rand,
+    );
+    if (end) paragraph = 3 + Math.floor(rand() * 5);
+    y += lh;
+  }
+  ctx.fillStyle = "rgba(42,33,24,0.55)";
+  drawDiamondRule(ctx, w / 2 - unit * 1.5, h * 0.935, unit * 4, unit);
+  return canvas;
 }
 
 export function createSharedTextures(): SharedTextures {
   return {
     edgeVertical: toTexture(drawPageEdge(true)),
     edgeHorizontal: toTexture(drawPageEdge(false)),
+    pageBack: toTexture(drawPageBack()),
   };
 }
 
