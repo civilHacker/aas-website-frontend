@@ -2,6 +2,8 @@ import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   libraryBooks as fallbackBooks,
+  type BookInsight,
+  type InsightKind,
   type LibraryBook,
   type ShelfId,
 } from "@/components/library/books";
@@ -15,6 +17,16 @@ type BookRow = {
   rating: number | null;
   recommendation: string | null;
   spine_color: string;
+  created_at: number;
+};
+
+type InsightRow = {
+  book_id: string;
+  type: string;
+  title: string | null;
+  description: string;
+  page_number: string | null;
+  section_number: string | null;
   created_at: number;
 };
 
@@ -76,7 +88,20 @@ function splitDescription(description: string) {
   return { excerpt: description, synopsis: description };
 }
 
-function toLibraryBook(row: BookRow): LibraryBook {
+function toBookInsight(row: InsightRow): BookInsight {
+  const kind = row.type.toLowerCase() as InsightKind;
+  return {
+    kind,
+    // Commentary has its own title; lead with it, then the description as a
+    // second paragraph. Points/Quotes have no title, so text is just the description.
+    text: row.title ?? row.description,
+    detail: row.title ? [row.description] : undefined,
+    page: row.page_number ?? undefined,
+    chapter: row.section_number ?? undefined,
+  };
+}
+
+function toLibraryBook(row: BookRow, insights?: BookInsight[]): LibraryBook {
   const { excerpt, synopsis } = splitDescription(row.description);
   const [width, height, thickness] =
     SIZES[Math.floor(hash(`${row.id}-size`) * SIZES.length)];
@@ -91,6 +116,7 @@ function toLibraryBook(row: BookRow): LibraryBook {
     shelf: shelfFromCategory(row.category),
     rating: row.rating ?? 5,
     verdict: row.recommendation ?? undefined,
+    insights: insights?.length ? insights : undefined,
     synopsis,
     excerpt,
     cloth: row.spine_color,
@@ -103,19 +129,42 @@ function toLibraryBook(row: BookRow): LibraryBook {
 
 /** Live from the admin panel's book library; falls back to the design fallback set if it's empty or unreachable. */
 export async function getLibraryBooks(): Promise<LibraryBook[]> {
-  const { data, error } = await createAdminClient()
-    .from("books")
-    .select(
-      "id, title, author, category, description, rating, recommendation, spine_color, created_at",
-    )
-    .order("created_at", { ascending: false })
-    .returns<BookRow[]>();
+  const client = createAdminClient();
+  const [booksResult, insightsResult] = await Promise.all([
+    client
+      .from("books")
+      .select(
+        "id, title, author, category, description, rating, recommendation, spine_color, created_at",
+      )
+      .order("created_at", { ascending: false })
+      .returns<BookRow[]>(),
+    client
+      .from("insights")
+      .select(
+        "book_id, type, title, description, page_number, section_number, created_at",
+      )
+      .order("created_at", { ascending: true })
+      .returns<InsightRow[]>(),
+  ]);
 
-  if (error) {
-    console.error("Loading library books failed:", error.message);
+  if (booksResult.error) {
+    console.error("Loading library books failed:", booksResult.error.message);
     return fallbackBooks;
   }
-  if (data.length === 0) return fallbackBooks;
+  if (booksResult.data.length === 0) return fallbackBooks;
 
-  return data.map(toLibraryBook);
+  if (insightsResult.error) {
+    console.error("Loading book insights failed:", insightsResult.error.message);
+  }
+
+  const insightsByBook = new Map<string, BookInsight[]>();
+  for (const row of insightsResult.data ?? []) {
+    const list = insightsByBook.get(row.book_id) ?? [];
+    list.push(toBookInsight(row));
+    insightsByBook.set(row.book_id, list);
+  }
+
+  return booksResult.data.map((row) =>
+    toLibraryBook(row, insightsByBook.get(row.id)),
+  );
 }
