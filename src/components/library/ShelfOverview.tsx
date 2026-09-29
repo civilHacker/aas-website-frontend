@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
-import { libraryBooks, shelves, type LibraryBook } from "./books";
+import { shelves, type LibraryBook } from "./books";
 
 type Art = Record<string, { cover: string; spine: string }>;
 
@@ -60,9 +60,11 @@ function ShelfBook({
 
 export function ShelfOverview({
   open,
+  books,
   onPick,
 }: {
   open: boolean;
+  books: LibraryBook[];
   onPick: (index: number) => void;
 }) {
   const [art, setArt] = useState<Art>({});
@@ -73,11 +75,11 @@ export function ShelfOverview({
         .filter((s) => s.id !== "all")
         .map((s) => ({
           ...s,
-          books: libraryBooks
+          books: books
             .map((book, index) => ({ book, index }))
             .filter(({ book }) => book.shelf === s.id),
         })),
-    [],
+    [books],
   );
 
   useEffect(() => {

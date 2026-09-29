@@ -20,8 +20,8 @@ import { ShelfOverview } from "./ShelfOverview";
 import {
   bookPages,
   buyLink,
-  libraryBooks,
   shelves,
+  type LibraryBook,
   type ShelfId,
 } from "./books";
 
@@ -32,11 +32,11 @@ const BookshelfScene = dynamic(() => import("./BookshelfScene"), {
 const TITLE = "The Founder’s Shelf";
 const SHELF_ANCHOR = "library-shelf";
 
-const inShelf = (shelf?: ShelfId) =>
-  libraryBooks.map((b) => !shelf || b.shelf === shelf);
+const inShelf = (books: LibraryBook[], shelf?: ShelfId) =>
+  books.map((b) => !shelf || b.shelf === shelf);
 
-const middleSlot = (shelf?: ShelfId) =>
-  Math.max(0, Math.floor((inShelf(shelf).filter(Boolean).length - 1) / 2));
+const middleSlot = (books: LibraryBook[], shelf?: ShelfId) =>
+  Math.max(0, Math.floor((inShelf(books, shelf).filter(Boolean).length - 1) / 2));
 
 function scrollToCollection(id: ShelfId | "all") {
   document
@@ -54,17 +54,19 @@ const glass =
 export function LibrarySection({
   header,
   shelf,
+  books,
   onDetailsChange,
 }: {
   header?: ReactNode;
   shelf?: ShelfId;
+  books: LibraryBook[];
   /** Called when the book details below the section appear or go away. */
   onDetailsChange?: (shown: boolean) => void;
 }) {
-  const initialSlot = middleSlot(shelf);
+  const initialSlot = middleSlot(books, shelf);
   const [filter, setFilter] = useState<ShelfId | "all">(shelf ?? "all");
   const [centered, setCentered] = useState(
-    () => inShelf(shelf).flatMap((v, i) => (v ? [i] : []))[initialSlot] ?? 0,
+    () => inShelf(books, shelf).flatMap((v, i) => (v ? [i] : []))[initialSlot] ?? 0,
   );
   const [selected, setSelected] = useState<number | null>(null);
   const [panelVisible, setPanelVisible] = useState(false);
@@ -95,7 +97,7 @@ export function LibrarySection({
     turning: false,
     dragMoved: false,
     reducedMotion: false,
-    visible: inShelf(shelf),
+    visible: inShelf(books, shelf),
   });
 
   useEffect(() => {
@@ -115,10 +117,10 @@ export function LibrarySection({
 
   const visibleBooks = useMemo(
     () =>
-      libraryBooks
+      books
         .map((book, index) => ({ book, index }))
         .filter(({ book }) => filter === "all" || book.shelf === filter),
-    [filter],
+    [books, filter],
   );
   const slotCount = visibleBooks.length;
   const lastSlot = Math.max(0, slotCount - 1);
@@ -137,7 +139,7 @@ export function LibrarySection({
         tip.style.opacity = "0";
         return;
       }
-      tip.textContent = libraryBooks[index].title;
+      tip.textContent = books[index].title;
       tip.style.transform = `translate(${x}px, ${y}px) translate(-50%, -100%)`;
       tip.style.opacity = "1";
     };
@@ -150,7 +152,7 @@ export function LibrarySection({
       c.onDisplay = undefined;
       c.onHover = undefined;
     };
-  }, [slotCount]);
+  }, [books, slotCount]);
 
   const clampSlot = useCallback(
     (v: number) => Math.min(slotCountRef.current - 1, Math.max(0, v)),
@@ -190,15 +192,18 @@ export function LibrarySection({
   }, []);
 
   /** Next page wraps round to the first; the first page has nothing before it. */
-  const turn = useCallback((dir: 1 | -1) => {
-    const c = controller.current;
-    if (c.selected === null || !c.opening || c.turning) return;
-    const count = bookPages(libraryBooks[c.selected]).length;
-    setReading((r) => {
-      if (count < 2 || (dir < 0 && r.n === 0)) return r;
-      return { n: (r.n + dir + count) % count, dir };
-    });
-  }, []);
+  const turn = useCallback(
+    (dir: 1 | -1) => {
+      const c = controller.current;
+      if (c.selected === null || !c.opening || c.turning) return;
+      const count = bookPages(books[c.selected]).length;
+      setReading((r) => {
+        if (count < 2 || (dir < 0 && r.n === 0)) return r;
+        return { n: (r.n + dir + count) % count, dir };
+      });
+    },
+    [books],
+  );
 
   const close = useCallback(() => {
     const c = controller.current;
@@ -212,7 +217,7 @@ export function LibrarySection({
   const chooseShelf = (id: ShelfId | "all") => {
     const c = controller.current;
     if (c.selected !== null || id === filter) return;
-    c.visible = libraryBooks.map((b) => id === "all" || b.shelf === id);
+    c.visible = books.map((b) => id === "all" || b.shelf === id);
     const count = c.visible.filter(Boolean).length;
     slotCountRef.current = count;
     c.target = Math.floor((count - 1) / 2);
@@ -229,7 +234,7 @@ export function LibrarySection({
 
   const pickFromOverview = (index: number) => {
     closeOverview();
-    const shelf = libraryBooks[index].shelf;
+    const shelf = books[index].shelf;
     if (shelf && shelf !== filter) chooseShelf(shelf);
     open(index);
   };
@@ -312,17 +317,17 @@ export function LibrarySection({
     setFromTrack(event.clientX);
   };
 
-  const book = selected !== null ? libraryBooks[selected] : null;
-  const facing = libraryBooks[centered] ?? visibleBooks[0]?.book;
+  const book = selected !== null ? books[selected] : null;
+  const facing = books[centered] ?? visibleBooks[0]?.book;
   const facingSlot = visibleBooks.findIndex(({ index }) => index === centered);
   const isOpen = selected !== null;
   const pageCount = book ? bookPages(book).length : 0;
   const page = useMemo(() => {
     if (selected === null) return null;
-    const pages = bookPages(libraryBooks[selected]);
+    const pages = bookPages(books[selected]);
     const n = Math.min(reading.n, pages.length - 1);
     return { index: selected, insight: pages[n], n, dir: reading.dir };
-  }, [selected, reading]);
+  }, [books, selected, reading]);
   const Heading = shelf ? "h2" : "h1";
 
   return (
@@ -370,7 +375,7 @@ export function LibrarySection({
         >
           {live && (
             <BookshelfScene
-              books={libraryBooks}
+              books={books}
               controller={controller}
               onSelect={open}
               onCenteredChange={setCentered}
@@ -616,7 +621,7 @@ export function LibrarySection({
 
         {!shelf && (
           <>
-            <ShelfOverview open={overview} onPick={pickFromOverview} />
+            <ShelfOverview open={overview} books={books} onPick={pickFromOverview} />
 
             <button
               type="button"
