@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { notFound } from "next/navigation";
 import { BookNotes } from "@/components/home/BookNotes";
 import { Contact } from "@/components/home/Contact";
 import { Hero } from "@/components/home/Hero";
@@ -12,6 +13,9 @@ export const metadata: Metadata = {
 };
 
 export default function OverviewPage() {
+  // Hidden for now; remove this line to bring the page back.
+  notFound();
+
   return (
     <>
       <main className="flex-1 bg-black">

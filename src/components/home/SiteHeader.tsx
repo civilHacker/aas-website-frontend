@@ -5,14 +5,19 @@ import { useEffect, useState } from "react";
 
 const navLinks = [
   { key: "library", label: "Library", href: "/" },
-  { key: "overview", label: "Overview", href: "/overview" },
+  { key: "overview", label: "Overview", href: "/overview", hidden: true },
   { key: "work", label: "Work", href: "/work" },
   { key: "featured", label: "Featured", href: "/featured" },
   { key: "about", label: "About", href: "/about" },
-  { key: "story", label: "Story", href: "/story" },
+  { key: "story", label: "Story", href: "/story", hidden: true },
 ];
 
 type NavKey = (typeof navLinks)[number]["key"];
+
+const visibleLinks = navLinks.filter((link) => !link.hidden);
+
+/** The Contact buttons point at the Overview page, which is hidden for now. */
+const showContact = false;
 
 export function SiteHeader({
   active = "overview",
@@ -56,7 +61,7 @@ export function SiteHeader({
         aria-label="Primary"
         className={`absolute top-8 left-1/2 hidden h-[51px] -translate-x-1/2 items-center gap-[21px] rounded-[14px] pr-[31px] pl-[9px] backdrop-blur-[20px] lg:flex xl:top-[38px] ${glass}`}
       >
-        {navLinks.map((link) =>
+        {visibleLinks.map((link) =>
           link.key === active ? (
             <Link
               key={link.label}
@@ -79,12 +84,14 @@ export function SiteHeader({
       </nav>
 
       <div className="flex shrink-0 items-center gap-2">
-        <Link
-          href="/overview#contact"
-          className="hidden rounded-[20px] bg-white px-6 py-[17px] text-[15px] leading-[1.119] text-black transition-opacity hover:opacity-85 sm:block sm:px-[31px]"
+        {showContact && (
+          <Link
+            href="/overview#contact"
+            className="hidden rounded-[20px] bg-white px-6 py-[17px] text-[15px] leading-[1.119] text-black transition-opacity hover:opacity-85 sm:block sm:px-[31px]"
         >
-          Contact
-        </Link>
+            Contact
+          </Link>
+        )}
         <button
           type="button"
           aria-label={menuOpen ? "Close menu" : "Open menu"}
@@ -113,7 +120,7 @@ export function SiteHeader({
           aria-label="Mobile"
           className="absolute top-full right-4 left-4 mt-3 flex flex-col gap-1 rounded-[20px] bg-black/70 p-3 backdrop-blur-[20px] lg:hidden"
         >
-          {navLinks.map((link) => (
+          {visibleLinks.map((link) => (
             <Link
               key={link.label}
               href={link.href}
@@ -124,13 +131,15 @@ export function SiteHeader({
               {link.label}
             </Link>
           ))}
-          <Link
-            href="/overview#contact"
-            onClick={() => setMenuOpen(false)}
-            className="mt-1 rounded-[12px] bg-accent px-4 py-3 text-center text-[16px] text-black sm:hidden"
-          >
-            Contact
-          </Link>
+          {showContact && (
+            <Link
+              href="/overview#contact"
+              onClick={() => setMenuOpen(false)}
+              className="mt-1 rounded-[12px] bg-accent px-4 py-3 text-center text-[16px] text-black sm:hidden"
+            >
+              Contact
+            </Link>
+          )}
         </nav>
       )}
     </header>

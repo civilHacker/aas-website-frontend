@@ -33,13 +33,11 @@ const columns = [
   },
   {
     heading: "More",
+    // Story, Blog, Book, Mentorship and Contact live on the hidden
+    // Story and Overview pages.
     links: [
-      { label: "My Story", href: "/story" },
-      { label: "Blog", href: "/overview#blog" },
-      { label: "Book", href: "/overview#book" },
+      { label: "About", href: "/about" },
       { label: "Awards", href: "/about#awards" },
-      { label: "Mentorship", href: "/overview#teaching" },
-      { label: "Media & Contact", href: "/overview#contact" },
     ],
   },
 ];

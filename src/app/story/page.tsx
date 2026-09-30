@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { notFound } from "next/navigation";
 import { SiteFooter } from "@/components/home/SiteFooter";
 import { PageHeader } from "@/components/home/PageHeader";
 import { Timeline } from "@/components/story/Timeline";
@@ -10,6 +11,9 @@ export const metadata: Metadata = {
 };
 
 export default function StoryPage() {
+  // Hidden for now; remove this line to bring the page back.
+  notFound();
+
   return (
     <>
       <main className="flex-1 bg-black">
