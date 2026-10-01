@@ -10,6 +10,9 @@ const navLinks = [
   { key: "featured", label: "Featured", href: "/featured" },
   { key: "about", label: "About", href: "/about" },
   { key: "story", label: "Story", href: "/story", hidden: true },
+  { key: "problems", label: "Problems", href: "/problems", hidden: true },
+  { key: "blog", label: "Blog", href: "/blog", hidden: true },
+  { key: "writing", label: "Writing", href: "/writing", hidden: true },
 ];
 
 type NavKey = (typeof navLinks)[number]["key"];
