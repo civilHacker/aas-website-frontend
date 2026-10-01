@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { marked } from "marked";
 import { SiteFooter } from "@/components/home/SiteFooter";
 import { PageHeader } from "@/components/home/PageHeader";
+import { SubmissionForm } from "@/components/problems/SubmissionForm";
 import { getProblemBySlug } from "@/lib/problems";
 
 export const revalidate = 30;
@@ -48,6 +49,19 @@ export default async function ProblemDetailPage({
             className="prose prose-invert prose-headings:font-[Georgia,'Times_New_Roman',serif] mt-8 max-w-none text-white/80"
             dangerouslySetInnerHTML={{ __html: marked.parse(problem.body) as string }}
           />
+
+          <div className="mt-16 border-t border-white/10 pt-10">
+            <h2 className="font-[Georgia,'Times_New_Roman',serif] text-[24px] text-white">
+              Submit your solution
+            </h2>
+            <p className="mt-2 max-w-[500px] text-sm text-white/60">
+              Upload a video, Excel file, or PDF — no account needed. We'll review it and follow up by
+              email.
+            </p>
+            <div className="mt-6 max-w-[480px]">
+              <SubmissionForm problemId={problem.id} />
+            </div>
+          </div>
         </article>
       </main>
       <SiteFooter />
