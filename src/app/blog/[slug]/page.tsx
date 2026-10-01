@@ -38,6 +38,14 @@ export default async function BlogPostPage({
           <h1 className="font-[Georgia,'Times_New_Roman',serif] text-[36px] leading-[1.1] text-white sm:text-[48px]">
             {post.title}
           </h1>
+          {post.image ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={post.image}
+              alt=""
+              className="mt-8 aspect-video w-full rounded-[16px] object-cover"
+            />
+          ) : null}
           <div
             className="prose prose-invert prose-headings:font-[Georgia,'Times_New_Roman',serif] mt-8 max-w-none text-white/80"
             dangerouslySetInnerHTML={{ __html: marked.parse(post.body) as string }}

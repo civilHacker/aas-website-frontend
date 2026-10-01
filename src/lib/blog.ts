@@ -6,6 +6,7 @@ export type BlogPost = {
   title: string;
   slug: string;
   body: string;
+  image: string | null;
   createdAt: number;
 };
 
@@ -14,7 +15,13 @@ type BlogRow = {
   title: string;
   slug: string;
   body: string;
+  image_url: string | null;
   created_at: number;
+};
+
+const httpUrl = (value: string | null) => {
+  const url = value?.trim();
+  return url && /^https?:\/\//i.test(url) ? url : null;
 };
 
 function toBlogPost(row: BlogRow): BlogPost {
@@ -23,6 +30,7 @@ function toBlogPost(row: BlogRow): BlogPost {
     title: row.title,
     slug: row.slug,
     body: row.body,
+    image: httpUrl(row.image_url),
     createdAt: row.created_at,
   };
 }
@@ -30,7 +38,7 @@ function toBlogPost(row: BlogRow): BlogPost {
 export async function getBlogPosts(): Promise<BlogPost[]> {
   const { data, error } = await createAdminClient()
     .from("blog_posts")
-    .select("id, title, slug, body, created_at")
+    .select("id, title, slug, body, image_url, created_at")
     .eq("status", "published")
     .order("created_at", { ascending: false })
     .returns<BlogRow[]>();
@@ -45,7 +53,7 @@ export async function getBlogPosts(): Promise<BlogPost[]> {
 export async function getBlogPostBySlug(slug: string): Promise<BlogPost | null> {
   const { data, error } = await createAdminClient()
     .from("blog_posts")
-    .select("id, title, slug, body, created_at")
+    .select("id, title, slug, body, image_url, created_at")
     .eq("slug", slug)
     .eq("status", "published")
     .maybeSingle<BlogRow>();

@@ -42,12 +42,22 @@ export default async function BlogPage() {
             <ul className="mt-12 flex flex-col gap-6">
               {posts.map((post) => (
                 <li key={post.id} className="border-b border-white/10 pb-6">
-                  <Link href={`/blog/${post.slug}`} className="group block">
-                    <p className="text-xs text-white/40">{formatDate(post.createdAt)}</p>
-                    <h2 className="mt-2 font-[Georgia,'Times_New_Roman',serif] text-[26px] leading-[1.15] text-white group-hover:underline">
-                      {post.title}
-                    </h2>
-                    <p className="mt-2 text-white/60">{firstLine(post.body)}</p>
+                  <Link href={`/blog/${post.slug}`} className="group flex gap-5">
+                    {post.image ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={post.image}
+                        alt=""
+                        className="h-24 w-24 shrink-0 rounded-[12px] object-cover sm:h-32 sm:w-32"
+                      />
+                    ) : null}
+                    <div className="min-w-0">
+                      <p className="text-xs text-white/40">{formatDate(post.createdAt)}</p>
+                      <h2 className="mt-2 font-[Georgia,'Times_New_Roman',serif] text-[26px] leading-[1.15] text-white group-hover:underline">
+                        {post.title}
+                      </h2>
+                      <p className="mt-2 text-white/60">{firstLine(post.body)}</p>
+                    </div>
                   </Link>
                 </li>
               ))}
