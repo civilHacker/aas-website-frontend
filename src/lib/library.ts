@@ -55,7 +55,6 @@ type InsightRow = {
   description: string;
   page_number: string | null;
   section_number: string | null;
-  written_by_aas: boolean | null;
   created_at: number;
 };
 
@@ -119,7 +118,7 @@ function splitDescription(description: string) {
 
 function toBookInsight(row: InsightRow): BookInsight {
   const kind = row.type.toLowerCase() as InsightKind;
-  const writtenByAAS = row.written_by_aas ?? kind !== "quotes";
+  const writtenByAAS = kind !== "quotes";
   return {
     kind,
     // Commentary has its own title; lead with it, then the description as a
@@ -168,9 +167,7 @@ export async function getLibraryBooks(): Promise<LibraryBook[]> {
     fetchBookRows(client),
     client
       .from("insights")
-      .select(
-        "book_id, type, title, description, page_number, section_number, written_by_aas, created_at",
-      )
+      .select("book_id, type, title, description, page_number, section_number, created_at")
       .order("created_at", { ascending: true })
       .returns<InsightRow[]>(),
   ]);
