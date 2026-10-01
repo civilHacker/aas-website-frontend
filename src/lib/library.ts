@@ -17,8 +17,36 @@ type BookRow = {
   rating: number | null;
   recommendation: string | null;
   spine_color: string;
+  buy_link: string | null;
+  amazon_link: string | null;
+  kindle_link: string | null;
+  status?: string | null;
   created_at: number;
 };
+
+const BOOK_COLUMNS =
+  "id, title, author, category, description, rating, recommendation, spine_color, buy_link, amazon_link, kindle_link, created_at";
+
+/**
+ * The "status" (Draft/Publish) column may not exist yet if its migration
+ * hasn't run. Try selecting it; if that's specifically why the query fails,
+ * fall back to the query without it so the whole site doesn't go dark.
+ */
+async function fetchBookRows(client: ReturnType<typeof createAdminClient>) {
+  const withStatus = await client
+    .from("books")
+    .select(`${BOOK_COLUMNS}, status`)
+    .order("created_at", { ascending: false })
+    .returns<BookRow[]>();
+  if (!withStatus.error) return withStatus;
+  if (!/status/i.test(withStatus.error.message)) return withStatus;
+
+  return client
+    .from("books")
+    .select(BOOK_COLUMNS)
+    .order("created_at", { ascending: false })
+    .returns<BookRow[]>();
+}
 
 type InsightRow = {
   book_id: string;
@@ -27,6 +55,7 @@ type InsightRow = {
   description: string;
   page_number: string | null;
   section_number: string | null;
+  written_by_aas: boolean | null;
   created_at: number;
 };
 
@@ -90,6 +119,7 @@ function splitDescription(description: string) {
 
 function toBookInsight(row: InsightRow): BookInsight {
   const kind = row.type.toLowerCase() as InsightKind;
+  const writtenByAAS = row.written_by_aas ?? kind !== "quotes";
   return {
     kind,
     // Commentary has its own title; lead with it, then the description as a
@@ -98,6 +128,7 @@ function toBookInsight(row: InsightRow): BookInsight {
     detail: row.title ? [row.description] : undefined,
     page: row.page_number ?? undefined,
     chapter: row.section_number ?? undefined,
+    source: writtenByAAS ? "aas" : "book",
   };
 }
 
@@ -119,6 +150,9 @@ function toLibraryBook(row: BookRow, insights?: BookInsight[]): LibraryBook {
     insights: insights?.length ? insights : undefined,
     synopsis,
     excerpt,
+    buyLink: row.buy_link ?? undefined,
+    amazonLink: row.amazon_link ?? undefined,
+    kindleLink: row.kindle_link ?? undefined,
     cloth: row.spine_color,
     foil,
     width,
@@ -131,17 +165,11 @@ function toLibraryBook(row: BookRow, insights?: BookInsight[]): LibraryBook {
 export async function getLibraryBooks(): Promise<LibraryBook[]> {
   const client = createAdminClient();
   const [booksResult, insightsResult] = await Promise.all([
-    client
-      .from("books")
-      .select(
-        "id, title, author, category, description, rating, recommendation, spine_color, created_at",
-      )
-      .order("created_at", { ascending: false })
-      .returns<BookRow[]>(),
+    fetchBookRows(client),
     client
       .from("insights")
       .select(
-        "book_id, type, title, description, page_number, section_number, created_at",
+        "book_id, type, title, description, page_number, section_number, written_by_aas, created_at",
       )
       .order("created_at", { ascending: true })
       .returns<InsightRow[]>(),
@@ -151,7 +179,8 @@ export async function getLibraryBooks(): Promise<LibraryBook[]> {
     console.error("Loading library books failed:", booksResult.error.message);
     return fallbackBooks;
   }
-  if (booksResult.data.length === 0) return fallbackBooks;
+  const publishedRows = booksResult.data.filter((row) => row.status !== "draft");
+  if (publishedRows.length === 0) return fallbackBooks;
 
   if (insightsResult.error) {
     console.error("Loading book insights failed:", insightsResult.error.message);
@@ -164,7 +193,7 @@ export async function getLibraryBooks(): Promise<LibraryBook[]> {
     insightsByBook.set(row.book_id, list);
   }
 
-  return booksResult.data.map((row) =>
+  return publishedRows.map((row) =>
     toLibraryBook(row, insightsByBook.get(row.id)),
   );
 }

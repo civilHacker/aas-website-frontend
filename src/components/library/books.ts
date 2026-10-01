@@ -42,6 +42,10 @@ export type LibraryBook = {
   insights?: BookInsight[];
   synopsis: string;
   excerpt: string;
+  /** Buy links set in the admin panel; falls back to a generated search link when absent. */
+  buyLink?: string;
+  amazonLink?: string;
+  kindleLink?: string;
   /** Cloth colour of boards and spine. Keep these muted. */
   cloth: string;
   /** Foil colour used for stamped lettering and rules. */
@@ -398,14 +402,17 @@ export const libraryBooks: LibraryBook[] = [
 ];
 
 export function buyLink(book: LibraryBook) {
-  return `https://bookshop.org/search?keywords=${encodeURIComponent(`${book.title} ${book.author}`)}`;
+  return (
+    book.buyLink ??
+    `https://bookshop.org/search?keywords=${encodeURIComponent(`${book.title} ${book.author}`)}`
+  );
 }
 
 export function storeLinks(book: LibraryBook) {
   const q = encodeURIComponent(`${book.title} ${book.author}`);
   return {
-    amazon: `https://www.amazon.com/s?k=${q}&i=stripbooks`,
-    kindle: `https://www.amazon.com/s?k=${q}&i=digital-text`,
+    amazon: book.amazonLink ?? `https://www.amazon.com/s?k=${q}&i=stripbooks`,
+    kindle: book.kindleLink ?? `https://www.amazon.com/s?k=${q}&i=digital-text`,
   };
 }
 
