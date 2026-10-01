@@ -6,13 +6,13 @@ import { useEffect, useState } from "react";
 const navLinks = [
   { key: "library", label: "Library", href: "/" },
   { key: "overview", label: "Overview", href: "/overview", hidden: true },
-  { key: "work", label: "Work", href: "/work" },
   { key: "featured", label: "Featured", href: "/featured" },
   { key: "about", label: "About", href: "/about" },
   { key: "story", label: "Story", href: "/story", hidden: true },
-  { key: "problems", label: "Problems", href: "/problems", hidden: true },
-  { key: "blog", label: "Blog", href: "/blog", hidden: true },
+  { key: "problems", label: "Problems", href: "/problems" },
+  { key: "blog", label: "Blog", href: "/blog" },
   { key: "writing", label: "Writing", href: "/writing", hidden: true },
+  { key: "mentorship", label: "Mentorship", href: "/mentorship" },
 ];
 
 type NavKey = (typeof navLinks)[number]["key"];

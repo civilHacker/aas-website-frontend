@@ -9,18 +9,6 @@ const socials = [
 
 const columns = [
   {
-    heading: "Work",
-    links: [
-      "Astra Tech",
-      "Botim",
-      "PayBy",
-      "Barq EV",
-      "Rizek",
-      "All Ventures",
-      "Investments",
-    ].map((label) => ({ label, href: "/work" })),
-  },
-  {
     heading: "Featured",
     links: [
       "Articles",
@@ -33,11 +21,12 @@ const columns = [
   },
   {
     heading: "More",
-    // Story, Blog, Book, Mentorship and Contact live on the hidden
-    // Story and Overview pages.
     links: [
       { label: "About", href: "/about" },
       { label: "Awards", href: "/about#awards" },
+      { label: "Problems", href: "/problems" },
+      { label: "Blog", href: "/blog" },
+      { label: "Mentorship", href: "/mentorship" },
     ],
   },
 ];
