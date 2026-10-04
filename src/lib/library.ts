@@ -163,10 +163,12 @@ function toLibraryBook(row: BookRow, insights?: BookInsight[]): LibraryBook {
   };
 }
 
+type SiteSettingsRow = { visible_library_categories: string[] | null };
+
 /** Live from the admin panel's book library; falls back to the design fallback set if it's empty or unreachable. */
 export async function getLibraryBooks(): Promise<LibraryBook[]> {
   const client = createAdminClient();
-  const [booksResult, insightsResult] = await Promise.all([
+  const [booksResult, insightsResult, settingsResult] = await Promise.all([
     fetchBookRows(client),
     client
       .from("insights")
@@ -175,14 +177,25 @@ export async function getLibraryBooks(): Promise<LibraryBook[]> {
       )
       .order("created_at", { ascending: true })
       .returns<InsightRow[]>(),
+    client
+      .from("site_settings")
+      .select("visible_library_categories")
+      .eq("id", 1)
+      .maybeSingle<SiteSettingsRow>(),
   ]);
 
   if (booksResult.error) {
     console.error("Loading library books failed:", booksResult.error.message);
     return fallbackBooks;
   }
-  const publishedRows = booksResult.data.filter((row) => row.status !== "draft");
+  let publishedRows = booksResult.data.filter((row) => row.status !== "draft");
   if (publishedRows.length === 0) return fallbackBooks;
+
+  // null (including a missing settings row/table) means no restriction - show every category.
+  const visibleCategories = settingsResult.data?.visible_library_categories ?? null;
+  if (visibleCategories) {
+    publishedRows = publishedRows.filter((row) => visibleCategories.includes(row.category));
+  }
 
   if (insightsResult.error) {
     console.error("Loading book insights failed:", insightsResult.error.message);
